@@ -1,0 +1,5 @@
+*.db
+*.zip
+*.csv
+/venv
+/db_setup/data
