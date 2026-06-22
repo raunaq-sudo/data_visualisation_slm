@@ -42,8 +42,8 @@ CREATE TABLE IF NOT EXISTS widget_query_mapping (
     widget_id INTEGER PRIMARY KEY,
     query TEXT NOT NULL,
     status TEXT NOT NULL,
-    user_agent_conversation INTEGER,
-    widget_type TEXT,
+    user_agent_conversation TEXT NOT NULL,
+    widget_type TEXT NOT NULL,
     FOREIGN KEY (widget_id) REFERENCES dashboard_widget_mapping(widget_id) ON DELETE CASCADE
 );
 
@@ -51,9 +51,9 @@ CREATE TABLE IF NOT EXISTS widget_query_mapping (
 CREATE TABLE IF NOT EXISTS chat_message_history (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     chat_id TEXT NOT NULL,
-    sender TEXT NOT NULL,
-    message TEXT NOT NULL,
-    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+    message_history TEXT NOT NULL,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(chat_id)
 );
 
 -- 6. Table: metadata_data_table
@@ -64,6 +64,14 @@ CREATE TABLE IF NOT EXISTS metadata_data_table (
     column_type TEXT NOT NULL,
     column_description,
     UNIQUE(table_name, column_name)
+);
+
+-- 7. Table: metadata_data_table_description
+CREATE TABLE IF NOT EXISTS metadata_data_table_description (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    table_name TEXT NOT NULL,
+    table_description,
+    UNIQUE(table_name)
 );
 """
 
@@ -144,7 +152,21 @@ def update_metadata():
                         """,
                         rows
                     )
-            
+                cursor.execute(
+                    """
+                    INSERT INTO metadata_data_table_description(
+                        table_name,
+                        table_description
+                    )
+                    VALUES (?, ?)
+                    ON CONFLICT(table_name)
+                    DO NOTHING
+                    
+                    
+                    """,
+                    [table_name, None]
+                )
+
 def check_schema(data_db_name, metadata_db_name):
     """
     Compare actual database schema with metadata_data_table.

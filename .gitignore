@@ -3,3 +3,4 @@
 *.csv
 /venv
 /db_setup/data
+.env
