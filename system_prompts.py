@@ -22,8 +22,11 @@ def build_intake_prompt(
 
     # ── Build the schema block ────────────────────────────────────────────────
     if not tables:
+        print("No data availbale")
         schema_block = "  (No tables loaded — tell the user no data is available yet.)"
     else:
+        print("Table availbale")
+
         lines = []
         for table in tables:
             desc = next(

@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS dashboard_widget_mapping (
 
 -- 4. Table: widget_query_mapping
 CREATE TABLE IF NOT EXISTS widget_query_mapping (
-    widget_id INTEGER PRIMARY KEY,
+    widget_id TEXT PRIMARY KEY,
     query TEXT NOT NULL,
     status TEXT NOT NULL,
     user_agent_conversation TEXT NOT NULL,

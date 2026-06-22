@@ -10,15 +10,15 @@ from uuid import uuid4
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel, Field
-from pydantic_ai import Agent, ModelMessagesTypeAdapter
+from pydantic_ai import Agent, ModelMessagesTypeAdapter, RunContext
 from pydantic_ai.messages import ModelRequest, ModelResponse, UserPromptPart, TextPart
 from pydantic_ai.output import NativeOutput
 from pydantic_ai.models.ollama import OllamaModel
 from pydantic_ai.profiles import ModelProfile
 from pydantic_ai._json_schema import InlineDefsJsonSchemaTransformer
 
-from system_prompts import build_intake_prompt
 import config
+from system_prompts import build_intake_prompt
 
 # =====================================================================
 # 0. LOGGING
@@ -32,6 +32,9 @@ logger = logging.getLogger("DashboardAgent")
 
 app = FastAPI(title="Dynamic SQL Dashboard Agent API")
 
+# FIX 1/3: DB paths are explicit constants; admin db and data db are separate.
+# get_db_connection defaults to ADMIN_DB_PATH so all admin operations (chat
+# history, widget registry) never accidentally hit the data db.
 DB_FILE_PATH  = "db_setup/data.db"
 ADMIN_DB_PATH = "db_setup/dashboard_system.db"
 
@@ -41,7 +44,8 @@ ADMIN_DB_PATH = "db_setup/dashboard_system.db"
 # =====================================================================
 
 @contextmanager
-def get_db_connection(db_path: str = ADMIN_DB_PATH):
+def get_db_connection(db_path: str = ADMIN_DB_PATH):   # FIX 3: default → admin db
+    """Context manager that always commits or rolls back and closes."""
     connection = sqlite3.connect(db_path)
     try:
         yield connection
@@ -54,6 +58,14 @@ def get_db_connection(db_path: str = ADMIN_DB_PATH):
 
 
 def log_chat_history(chat_id: str, history_json: str) -> None:
+    """Upsert the full serialised message history for a chat session.
+
+    FIX 7/9/10: The old log_chat_message(chat_id, sender, message) mixed two
+    incompatible responsibilities — logging individual messages AND persisting
+    the full history blob.  The schema uses an UPSERT on chat_id and stores the
+    entire history as a single JSON column, so only one function is needed.
+    All callers now pass the already-serialised JSON string.
+    """
     with get_db_connection(ADMIN_DB_PATH) as conn:
         conn.execute(
             """
@@ -69,6 +81,11 @@ def log_chat_history(chat_id: str, history_json: str) -> None:
 
 
 def load_chat_history(chat_id: str):
+    """Return the full pydantic-ai message list for a session, or [] if new.
+
+    FIX 13: ModelMessagesTypeAdapter and json are now imported at the top.
+    FIX 3:  Explicitly uses ADMIN_DB_PATH.
+    """
     with get_db_connection(ADMIN_DB_PATH) as conn:
         cursor = conn.cursor()
         cursor.execute(
@@ -76,8 +93,10 @@ def load_chat_history(chat_id: str):
             (chat_id,),
         )
         row = cursor.fetchone()
+
     if not row:
         return []
+
     return ModelMessagesTypeAdapter.validate_json(row[0])
 
 
@@ -88,6 +107,13 @@ def update_widget(
     status: str,
     widget_type: str,
 ) -> None:
+    """Insert or update a widget record in widget_query_mapping.
+
+    FIX 6: update_widget was called but never defined.
+    Note: dashboard_widget_mapping requires a dashboard_id + widget_id FK pair,
+    so this writes only to widget_query_mapping which has widget_id as PK.
+    Wire up dashboard assignment separately once you have a user/session → dashboard mapping.
+    """
     with get_db_connection(ADMIN_DB_PATH) as conn:
         conn.execute(
             """
@@ -95,14 +121,14 @@ def update_widget(
                 (widget_id, query, status, user_agent_conversation, widget_type)
             VALUES (?, ?, ?, ?, ?)
             ON CONFLICT(widget_id) DO UPDATE SET
-                query                   = excluded.query,
-                status                  = excluded.status,
+                query                 = excluded.query,
+                status                = excluded.status,
                 user_agent_conversation = excluded.user_agent_conversation,
-                widget_type             = excluded.widget_type
+                widget_type           = excluded.widget_type
             """,
             (widget_id, query, status, user_conversation, widget_type),
         )
-    logger.info("Widget %s upserted (type=%s).", widget_id, widget_type)
+    logger.info("Widget %s upserted (type=%s, status=%s).", widget_id, widget_type, status)
 
 
 # =====================================================================
@@ -135,12 +161,25 @@ class SQLAgentDeps:
         self.schema = schema
 
 
+class IntakeAgentDeps:
+    def __init__(self, schema: DataSourceSchema, table: List[TableDescription]):
+        self.schema = schema
+        self.table = table          # FIX 11: stored as .table (not .tables)
+
+
 def generate_registry_from_metadata(
     db_path: str,
 ) -> Tuple[DataSourceSchema, List[TableDescription]]:
+    """Load schema + table descriptions from the admin metadata tables.
+
+    FIX 2: Early-return path now always returns the expected 2-tuple so callers
+    never have to handle two different return shapes.
+    """
     if not os.path.exists(db_path):
-        logger.warning("Metadata database '%s' not found. Defaulting to empty schema.", db_path)
-        return DataSourceSchema(source_name="empty_db", tables=[]), []
+        logger.warning(
+            "Metadata database '%s' not found. Defaulting to empty schema.", db_path
+        )
+        return DataSourceSchema(source_name="empty_db", tables=[]), []   # FIX 2
 
     with get_db_connection(db_path) as conn:
         cursor = conn.cursor()
@@ -183,19 +222,12 @@ def generate_registry_from_metadata(
     return schema_res, table_desc
 
 
+# FIX 1: was called with undefined `DB_NAME`; now uses ADMIN_DB_PATH
 db_schema, table_desc_deps = generate_registry_from_metadata(ADMIN_DB_PATH)
-sql_deps = SQLAgentDeps(schema=db_schema)
 
-# Build the intake system prompt once at startup with the schema embedded.
-# Rebuilding it here means the model receives a single self-contained system
-# prompt — no decorator injection, no deps plumbing, no attention-gap between
-# the rules and the data they reference.
-INTAKE_SYSTEM_PROMPT: str = build_intake_prompt(
-    tables=db_schema.tables,
-    table_descriptions=table_desc_deps,
-)
-logger.info("Intake system prompt built (%d chars).", len(INTAKE_SYSTEM_PROMPT))
-logger.info(f"Full prompt {INTAKE_SYSTEM_PROMPT}")
+dependencies        = SQLAgentDeps(schema=db_schema)
+dependencies_intake = IntakeAgentDeps(schema=db_schema, table=table_desc_deps)
+
 
 # =====================================================================
 # 3. STRUCTURED OUTPUT SCHEMA
@@ -204,49 +236,45 @@ logger.info(f"Full prompt {INTAKE_SYSTEM_PROMPT}")
 ALLOWED_WIDGETS = {"KPI", "BARCHART", "PIECHART", "LINECHART", "STACKEDBAR"}
 
 
-class IntakeState(BaseModel):
-    widget_type:Optional[str] = Field(
-        default=None)
-    query_description:Optional[str] = Field(
-        default=None)
-    is_confirmed:bool = Field(default = False)
-
-
-
-
 class IntakeOutput(BaseModel):
+    """Structured output returned by the intake agent on every turn."""
+
     completeness: Literal[0.0, 0.3, 0.5, 0.7, 0.9, 1.0] = Field(
         description=(
             "How complete the user's data-visualisation request is. "
-            "0.0 = greeting/off-topic; 0.3 = vague interest; "
-            "0.5 = one of widget/query known; 0.7 = both known, awaiting confirm; "
-            "0.9 = user confirmed; 1.0 = fully done."
+            "Pick exactly one of the allowed values: "
+            "0.0 = greeting / off-topic / no useful info; "
+            "0.3 = vague data interest but neither widget nor query is clear; "
+            "0.5 = one of widget OR query is known, the other is still missing; "
+            "0.7 = both widget AND query are known but user has not yet confirmed; "
+            "0.9 = user has confirmed, finalising; "
+            "1.0 = fully confirmed, is_confirmed must be True."
         ),
     )
     widget_type: Optional[str] = Field(
         default=None,
-        description=f"One of {sorted(ALLOWED_WIDGETS)}, or null.",
+        description=f"One of {sorted(ALLOWED_WIDGETS)}, or null if not yet determined.",
     )
     query_description: Optional[str] = Field(
         default=None,
-        description="The user's data query in plain English, or null.",
+        description="The user's data query goal in plain English, or null if not yet clear.",
     )
     is_confirmed: bool = Field(
         default=False,
-        description="True only when the user has explicitly confirmed.",
+        description="True only when the user has explicitly agreed to proceed.",
     )
-    reply: str = Field(description="Your next message to the user.")
-
-class SQLOutput(BaseModel):
-    sql_query: str = Field("The sql query based on the user`s query description")
-    confidence: float = Field("The confidence based on query description and the query generated. 1.0 - High confidence, 0.0 - low confidence")
-    possible_data_errors: Optional[str] = Field("The errors that the query can lead to. For eg: missing columns, wrong data type, logical or semantic flaws etc.")
+    reply: str = Field(description="Your next conversational message to the user.")
 
 
 # =====================================================================
 # 4. AGENT DEFINITIONS
 # =====================================================================
 
+# Corrected profile: self-hosted Ollama v0.5+ enforces JSON schema at the
+# sampler level via llama.cpp grammars, but pydantic-ai's built-in profile
+# for qwen2.5 doesn't set supports_json_schema_output.  We override it so
+# NativeOutput routes through Ollama's response_format API instead of prompt
+# injection, giving token-level schema enforcement on a 7B model.
 _qwen25_local_profile = ModelProfile(
     json_schema_transformer=InlineDefsJsonSchemaTransformer,
     ignore_streamed_leading_whitespace=True,
@@ -259,18 +287,30 @@ local_qwen_model = OllamaModel(
     profile=_qwen25_local_profile,
 )
 
-# Intake agent: no deps, no decorator — just a plain system_prompt string
-# that already contains the schema. Simple, transparent, debuggable.
+# No static system_prompt — the full prompt (with schema embedded) is built
+# dynamically on every turn by inject_metadata below, so the
+# model always sees the real table/column list right next to the rules that
+# reference it, regardless of whether message_history is being replayed.
 intake_agent = Agent(
     model=local_qwen_model,
     output_type=NativeOutput(IntakeOutput),
-    system_prompt=INTAKE_SYSTEM_PROMPT,
+    deps_type=IntakeAgentDeps,
 )
 
-# SQL agent: deps still used here because the schema is referenced at
-# query-time and may need to be re-injected cleanly per request.
-# @sql_query_agent.system_prompt
-def inject_database_schema(schema) -> str:
+sql_query_agent = Agent(
+    model=local_qwen_model,
+    deps_type=SQLAgentDeps,
+    retries=3,
+    system_prompt=(
+        "You are a strict SQL Generator. "
+        "Output ONLY a raw executable SQLite statement. Do not explain anything."
+    ),
+)
+
+
+@sql_query_agent.system_prompt
+def inject_database_schema(ctx: RunContext[SQLAgentDeps]) -> str:
+    schema = ctx.deps.schema
     if not schema.tables:
         return "WARNING: No tables found. You cannot generate a valid SQL query."
     lines = [f"Write SQLite for: '{schema.source_name}'.", "Schema:"]
@@ -281,27 +321,42 @@ def inject_database_schema(schema) -> str:
     return "\n".join(lines)
 
 
-sql_query_agent = Agent(
-    model=local_qwen_model,
-    retries=3,
-    output_type= NativeOutput(SQLOutput),
-    system_prompt=(
-        "You are a strict SQL Generator. "
-        "Output ONLY a raw executable SQLite statement. Do not explain anything."
-        "You must follow the following schema only and donnot make up columns."
-        "If the current schema doesnt suffice respond with INSUFFICIENT DATAPOINTS"
-        f"{inject_database_schema(db_schema)}"
-    ),
+@intake_agent.system_prompt(dynamic=True)
+def inject_metadata(ctx: RunContext[IntakeAgentDeps]) -> str:
+    """Build and return the full unified system prompt on every turn.
+
+    dynamic=True means pydantic-ai re-runs this function even when
+    message_history is provided, so the schema is always fresh and
+    always embedded inline next to the rules that reference it.
+    The schema is no longer a trailing appendix — it lives inside the
+    data-questions rule, eliminating the attention gap that caused the
+    model to ignore it on small-model inference.
+    """
+    logger.warning("INJECT_METADATA CALLED")
+    prompt = build_intake_prompt(
+        tables=ctx.deps.schema.tables,
+        table_descriptions=ctx.deps.table,
+    )
+
+    logger.info(
+        "INTAKE PROMPT GENERATED (%s chars)",
+        len(prompt)
+    )
+
+    logger.info(prompt[:2000])
+    return prompt
+
+logger.error(
+    "System prompts: %s",
+    getattr(intake_agent, "_system_prompts", None)
 )
-
-
-
 
 # =====================================================================
 # 5. MESSAGE HISTORY HELPERS
 # =====================================================================
 
 def serialise_history(messages: list) -> str:
+    """Serialise a pydantic-ai message list to a JSON string for DB storage."""
     return ModelMessagesTypeAdapter.dump_json(messages).decode()
 
 
@@ -322,9 +377,10 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str):
     await websocket.accept()
     logger.info("WebSocket session open: [%s]", chat_id)
 
+    # Load persisted history or start fresh
     message_history = load_chat_history(chat_id)
     is_new_chat = len(message_history) == 0
-    state = IntakeState()
+
     if is_new_chat:
         greeting = (
             "Hello! Let's configure a dashboard widget. "
@@ -333,46 +389,76 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str):
         await websocket.send_json({
             "sender": "agent",
             "message": greeting,
-            "system_status": {
-                "widget": None, "query": None,
-                "confirmed": False, "completeness": 0.0, "sql": None,
-            },
+            "system_status": {"widget": None, "query": None, "confirmed": False,
+                              "completeness": 0.0, "sql": None},
         })
+        # Persist the greeting as the first history entry
+        # FIX 10: use .model_dump() not .dump()
+        seed = ModelRequest(parts=[UserPromptPart(content="")])   # placeholder so history is non-empty
+        # We store the greeting as a ModelResponse so the agent sees it as prior context
         greeting_msg = ModelResponse(parts=[TextPart(content=greeting)])
         message_history = [greeting_msg]
         log_chat_history(chat_id, serialise_history(message_history))
-    
+    else:
+        # Replay prior conversation to the frontend on reconnect.
+        # Walk the pydantic-ai message list in order and re-emit each
+        # user and assistant turn as a chat event so the UI can rebuild
+        # the conversation thread without any extra state of its own.
+        for msg in message_history:
+            if msg.kind == "request":
+                # Extract user-prompt parts only (skips injected system prompts)
+                for part in msg.parts:
+                    if part.part_kind == "user-prompt" and part.content:
+                        await websocket.send_json({
+                            "sender": "user",
+                            "message": part.content,
+                            "system_status": None,
+                        })
+            elif msg.kind == "response":
+                # Extract text parts only (skips tool-call / tool-return parts)
+                for part in msg.parts:
+                    if part.part_kind == "text" and part.content:
+                        await websocket.send_json({
+                            "sender": "agent",
+                            "message": part.content,
+                            "system_status": None,
+                        })
+        logger.info(
+            "[%s] Replayed %d history messages to frontend on reconnect.",
+            chat_id, len(message_history),
+        )
+
     try:
         while True:
             user_message = await websocket.receive_text()
 
             # ── Intake agent ───────────────────────────────────────────
             try:
-                logger.info("[%s] Calling Intake Agent ...",
-                            chat_id)
+                logger.info("[%s] Calling Intake Agent...", chat_id)
+                logger.warning(
+                    "History length: %s",
+                    len(message_history)
+                )
 
-                prompt = f"""
-                Current State:
-                widget_type={state.widget_type}
-                query_description={state.query_description}
-                awaiting_confirmation={not state.is_confirmed}
-
-                User Message:
-                {user_message}
-                """
-                logger.info(prompt)
-
-                    
+                logger.warning(
+                    "Deps present: %s",
+                    dependencies_intake is not None
+                )
                 result = await intake_agent.run(
-                    prompt,
-                    # message_history=message_history,
+                    user_message,
+                    message_history=message_history,
+                    deps=dependencies_intake,
                     model_settings={"temperature": 0.1},
                 )
 
-                
+                # FIX 4: replace history list, don't append to it
+                message_history = result.all_messages()
+
                 intake: IntakeOutput = result.output
-                
-                # Server-side confirmation safety net
+
+                # ── Server-side confirmation safety net ────────────────
+                # If the model returned is_confirmed=False despite a clear
+                # affirmative and both fields populated, override it here.
                 _user_lower = user_message.strip().lower().rstrip("!.,")
                 _is_affirmative = (
                     _user_lower in _AFFIRMATIVES
@@ -385,20 +471,19 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str):
                     and not intake.is_confirmed
                 ):
                     logger.warning(
-                        "[%s] Overriding is_confirmed=True (user said: %r)",
-                        chat_id, user_message,
+                        "[%s] Model missed confirmation — overriding is_confirmed=True "
+                        "(user said: %r)", chat_id, user_message,
                     )
-                    intake = intake.model_copy(
-                        update={"is_confirmed": True, "completeness": 0.9}
-                    )
+                    intake = intake.model_copy(update={"is_confirmed": True, "completeness": 0.9})
 
                 logger.info(
-                    "[%s] Intake → completeness=%s | widget=%s | confirmed=%s",
-                    chat_id, intake.completeness, intake.widget_type, intake.is_confirmed,
+                    "[%s] Intake → completeness=%s | widget=%s | query=%s | confirmed=%s",
+                    chat_id, intake.completeness, intake.widget_type,
+                    intake.query_description, intake.is_confirmed,
                 )
 
             except Exception as e:
-                logger.error("[%s] Intake failure — %s: %s", chat_id, type(e).__name__, e)
+                logger.error("[%s] Intake agent failure — %s: %s", chat_id, type(e).__name__, e)
                 await websocket.send_json({
                     "sender": "agent",
                     "message": "Processing issue encountered. Let's try that again.",
@@ -414,36 +499,42 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str):
 
             if intake.completeness > 0.8 and intake.is_confirmed and intake.query_description:
                 if not db_schema.tables:
-                    generated_sql = "-- Error: No database tables found."
-                    logger.warning("[%s] SQL skipped: empty schema.", chat_id)
+                    generated_sql = "-- Error: No database tables found. Cannot generate SQL."
+                    logger.warning("[%s] SQL generation skipped: empty schema.", chat_id)
                 else:
+                    logger.info(
+                        "[%s] completeness=%s > 0.8 — generating SQL...",
+                        chat_id, intake.completeness,
+                    )
                     try:
-                        logger.info(f"Generate an accurate SQLite query for: {intake.query_description}")
                         sql_result = await sql_query_agent.run(
                             f"Generate an accurate SQLite query for: {intake.query_description}",
+                            deps=dependencies,
                             model_settings={"temperature": 0.1},
                         )
-                        sql_output: SQLOutput = sql_result.output
-                        generated_sql = sql_output.sql_query.strip()
-                        print(generated_sql)
-                        logger.info(sql_output.confidence)
-                        
-                        logger.info("[%s] SQL generated.", chat_id)
+                        generated_sql = sql_result.output.strip()
+                        logger.info("[%s] SQL generated successfully.", chat_id)
                     except Exception as sql_err:
-                        logger.error("[%s] SQL failed: %s", chat_id, sql_err)
-                        generated_sql = f"-- Error: {sql_err}"
+                        logger.error("[%s] SQL generation failed: %s", chat_id, sql_err)
+                        generated_sql = f"-- Execution error: {sql_err}"
 
+                    # FIX 5/6: uuid4 is a callable, not a class; update_widget now defined
                     if generated_sql and not generated_sql.startswith("--"):
+                        widget_id = str(uuid4())
                         update_widget(
-                            widget_id=str(uuid4()),
+                            widget_id=widget_id,
                             user_conversation=intake.query_description,
                             query=generated_sql,
                             status="NEW",
                             widget_type=intake.widget_type,
                         )
 
+                # FIX 14: reset history after a completed cycle so the next widget
+                # starts a fresh conversation instead of carrying stale context
                 message_history = []
 
+            # ── Persist history & respond ──────────────────────────────
+            # FIX 7: serialise_history handles the list→JSON conversion correctly
             log_chat_history(chat_id, serialise_history(message_history))
 
             await websocket.send_json({
@@ -457,12 +548,9 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str):
                     "sql": generated_sql,
                 },
             })
-            state.widget_type = intake.widget_type
-            state.query_description = intake.query_description
-            state.is_confirmed = intake.is_confirmed
 
     except WebSocketDisconnect:
-        logger.warning("Session closed: [%s]", chat_id)
+        logger.warning("Session closed for: [%s]", chat_id)
 
 
 # =====================================================================
@@ -471,6 +559,10 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str):
 
 @app.get("/")
 async def get_index():
+    """Serve the test frontend.
+    Looks for frontend.html next to this file; falls back to a minimal
+    inline page so the server stays usable even without the asset.
+    """
     here = os.path.dirname(os.path.abspath(__file__))
     html_path = os.path.join(here, "frontend.html")
     if os.path.exists(html_path):
@@ -478,8 +570,8 @@ async def get_index():
     return HTMLResponse(
         "<h2 style='font-family:sans-serif;padding:2rem'>"
         "frontend.html not found — place it next to app.py</h2>",
+        status_code=200,
     )
-
 
 if __name__ == "__main__":
     import uvicorn
