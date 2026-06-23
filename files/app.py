@@ -16,7 +16,7 @@ from pydantic_ai.output import NativeOutput
 from pydantic_ai.models.ollama import OllamaModel
 from pydantic_ai.profiles import ModelProfile
 from pydantic_ai._json_schema import InlineDefsJsonSchemaTransformer
-import config
+
 from system_prompts import build_intake_prompt
 from routers import dashboards as dashboards_router
 from routers import metadata   as metadata_router

@@ -77,6 +77,54 @@
     #conn-dot.error { background:var(--red); }
     #conn-label { font-size:10px; color:var(--text-muted); }
 
+    /* ── Theme switcher ─────────────────────────────────────────── */
+    .theme-switcher {
+      display:     flex;
+      align-items: center;
+      gap:         3px;
+      padding:     3px;
+      background:  var(--surface-2);
+      border:      1px solid var(--border);
+      border-radius: 6px;
+    }
+    .theme-btn {
+      width:         26px;
+      height:        26px;
+      border:        none;
+      border-radius: 4px;
+      background:    transparent;
+      cursor:        pointer;
+      display:       flex;
+      align-items:   center;
+      justify-content: center;
+      font-size:     13px;
+      transition:    background .15s;
+    }
+    .theme-btn:hover  { background: var(--border); }
+    .theme-btn.active { background: var(--accent); }
+
+    /* ── Publish button ──────────────────────────────────────────── */
+    .publish-btn {
+      background:    #2388ff;
+      color:         #ffffff;
+      border:        1px solid #3b9cff;
+      border-radius: var(--r);
+      font-size:     11px;
+      font-weight:   600;
+      padding:       4px 12px;
+      cursor:        pointer;
+      display:       flex;
+      align-items:   center;
+      gap:           5px;
+      white-space:   nowrap;
+      transition:    background .15s, box-shadow .15s;
+      box-shadow:    0 0 10px rgba(35,136,255,.25);
+      flex-shrink:   0;
+    }
+    .publish-btn:hover  { background:#3b9cff; box-shadow:0 0 16px rgba(88,166,255,.4); }
+    .publish-btn:active { transform:translateY(1px); }
+    .publish-btn svg    { flex-shrink:0; }
+
     /* collapse toggle buttons in topbar */
     .tog-btn {
       background:  transparent;
@@ -94,38 +142,7 @@
     }
     .tog-btn:hover { border-color:var(--accent); color:var(--accent); }
     .tog-btn svg   { flex-shrink:0; }
-    /* -- Publish btn ---------------------------------------------- */
-    .publish-btn {
-      background: #2388ff;
-      color: #ffffff;
-      border: 1px solid #3b9cff;
-      border-radius: 5px;
-      font-size: 11px;
-      font-weight: 600;
-      padding: 2px 7px;
-      cursor: pointer;
 
-      display: flex;
-      align-items: center;
-      gap: 6px;
-
-      transition: all 0.15s ease;
-      box-shadow: 0 0 12px rgba(35,136,255,0.25);
-    }
-
-    .publish-btn:hover {
-      background: #3b9cff;
-      border-color: #58a6ff;
-      box-shadow: 0 0 18px rgba(88,166,255,0.4);
-    }
-
-    .publish-btn:active {
-      transform: translateY(1px);
-    }
-
-    .publish-btn svg {
-      flex-shrink: 0;
-    }
     /* ── Main area ──────────────────────────────────────────────── */
     #main {
       flex:    1;
@@ -460,46 +477,87 @@
     .replay-div span { font-size:9px; color:var(--text-muted); white-space:nowrap; }
     .replay-div::before,.replay-div::after { content:''; flex:1; height:1px; background:var(--border); }
 
-    /* theme */
-    .theme-switcher {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-
-  padding: 3px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-}
-
-.theme-btn {
-  width: 28px;
-  height: 28px;
-
-  border: none;
-  border-radius: 4px;
-
-  background: transparent;
-  color: var(--text-dim);
-
-  cursor: pointer;
-
-  display: flex;
-  align-items: center;
-  justify-content: center;
-
-  transition: all 0.15s ease;
-}
-
-.theme-btn:hover {
-  background: var(--surface-2);
-  color: var(--text);
-}
-
-.theme-btn.active {
-  background: var(--accent);
-  color: white;
-}
+    /* ── Publish modal ──────────────────────────────────────────── */
+    #publish-overlay {
+      display:         none;
+      position:        fixed;
+      inset:           0;
+      background:      rgba(0,0,0,.65);
+      z-index:         200;
+      align-items:     center;
+      justify-content: center;
+    }
+    #publish-overlay.visible { display:flex; }
+    #publish-modal {
+      background:    var(--surface);
+      border:        1px solid var(--border);
+      border-radius: 8px;
+      padding:       24px 28px;
+      width:         380px;
+      display:       flex;
+      flex-direction: column;
+      gap:           14px;
+      box-shadow:    0 20px 60px rgba(0,0,0,.6);
+    }
+    #publish-modal h3 {
+      font-size:      14px;
+      font-weight:    700;
+      color:          var(--text);
+      margin:         0;
+    }
+    #publish-modal p {
+      font-size:  11px;
+      color:      var(--text-dim);
+      margin:     0;
+      line-height: 1.5;
+    }
+    .pub-field { display:flex; flex-direction:column; gap:5px; }
+    .pub-label { font-size:10px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--text-muted); }
+    .pub-input {
+      background:    var(--surface-2);
+      border:        1px solid var(--border);
+      border-radius: 5px;
+      color:         var(--text);
+      font-family:   var(--sans);
+      font-size:     12px;
+      padding:       7px 10px;
+      outline:       none;
+      transition:    border-color .15s;
+    }
+    .pub-input:focus { border-color:var(--accent); }
+    .pub-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:4px; }
+    .pub-cancel {
+      background:    transparent;
+      border:        1px solid var(--border);
+      border-radius: 5px;
+      color:         var(--text-dim);
+      font-size:     12px;
+      padding:       6px 14px;
+      cursor:        pointer;
+      transition:    border-color .15s, color .15s;
+    }
+    .pub-cancel:hover { border-color:var(--border-hi); color:var(--text); }
+    .pub-confirm {
+      background:    #2388ff;
+      border:        1px solid #3b9cff;
+      border-radius: 5px;
+      color:         #fff;
+      font-size:     12px;
+      font-weight:   700;
+      padding:       6px 18px;
+      cursor:        pointer;
+      transition:    background .15s;
+    }
+    .pub-confirm:hover    { background:#3b9cff; }
+    .pub-confirm:disabled { opacity:.4; cursor:default; }
+    .pub-status {
+      font-size:  11px;
+      padding:    6px 10px;
+      border-radius: 4px;
+      display:    none;
+    }
+    .pub-status.success { background:#1a3a1f; color:var(--green); border:1px solid #2a5a2f; display:block; }
+    .pub-status.error   { background:#3a1a1a; color:var(--red);   border:1px solid #5a2a2f; display:block; }
   </style>
 </head>
 <body>
@@ -509,12 +567,15 @@
   <span class="logo">◈ Dashboard Studio</span>
   <div class="top-sep"></div>
   <span class="session-tag" id="room-display">connecting…</span>
+
+  <!-- Theme switcher -->
   <div class="theme-switcher">
     <button class="theme-btn active" data-theme="dark">🌙</button>
     <button class="theme-btn" data-theme="light">☀️</button>
     <button class="theme-btn" data-theme="blue">🔵</button>
     <button class="theme-btn" data-theme="green">🟢</button>
   </div>
+
   <button class="tog-btn" id="tog-chat" title="Toggle chat">
     <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
       <rect x="1" y="1" width="4" height="10" rx="1" stroke="currentColor" stroke-width="1.2"/>
@@ -530,6 +591,8 @@
       <path d="M5 4H1M5 6H2M5 8H1" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
     </svg>
   </button>
+
+  <!-- Publish pushes conn-wrap to the far right via its own margin -->
   <button class="publish-btn" id="publish-btn" title="Publish Dashboard">
     <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
       <path d="M8 5v14l11-7z"/>
@@ -537,6 +600,7 @@
     Publish
   </button>
 
+  <!-- conn-wrap: margin-left:auto so it always hugs the right edge -->
   <div id="conn-wrap">
     <span id="conn-label">disconnected</span>
     <div id="conn-dot"></div>
@@ -657,6 +721,7 @@ const sendBtn = document.getElementById('send-btn');
 
 let replayDone = false;
 let widgetCounter = 0;
+let _lastSqlQuery = null;   // most recent SQL from agent, passed to addToCanvas
 
 // ── Panel collapse ───────────────────────────────────────────────────
 document.getElementById('tog-chat').addEventListener('click', () => {
@@ -817,7 +882,7 @@ function renderInlineChart(bubbleEl, widgetType, result, query) {
   const addBtn = document.createElement('button');
   addBtn.className = 'add-to-canvas-btn';
   addBtn.textContent = '+ Canvas';
-  addBtn.addEventListener('click', () => addToCanvas(widgetType, result, query));
+  addBtn.addEventListener('click', () => addToCanvas(widgetType, result, query, _lastSqlQuery));
   wrap.appendChild(addBtn);
 
   if (wt === 'KPI') {
@@ -889,7 +954,11 @@ function makeWidgetDraggable(el) {
 // chart instances keyed by widget id for cleanup
 const chartInstances = {};
 
-function addToCanvas(widgetType, result, query) {
+// Registry of widget metadata for publish — keyed by DOM id (e.g. 'cw-3')
+// Each entry: { uid, widgetType, result, query, sqlQuery }
+const widgetRegistry = {};
+
+function addToCanvas(widgetType, result, query, sqlQuery) {
   const ca  = document.getElementById('canvas-area');
   const wt  = (widgetType||'CHART').toUpperCase();
   const id  = 'cw-' + (++widgetCounter);
@@ -920,6 +989,7 @@ function addToCanvas(widgetType, result, query) {
   closeBtn.textContent = '×';
   closeBtn.addEventListener('click', () => {
     if (chartInstances[id]) { chartInstances[id].destroy(); delete chartInstances[id]; }
+    delete widgetRegistry[id];
     widget.remove();
     // restore empty hint if no widgets remain
     if (!ca.querySelector('.canvas-widget')) {
@@ -974,6 +1044,15 @@ function addToCanvas(widgetType, result, query) {
   ca.appendChild(widget);
   makeWidgetDraggable(widget);
 
+  // Register widget metadata for publish
+  widgetRegistry[id] = {
+    uid:        id,   // reuse DOM id as stable uid within this session
+    widgetType: wt,
+    query:      query    || null,
+    sqlQuery:   sqlQuery || null,
+    result:     result   || [],
+  };
+
   // Listen for resize (ResizeObserver) to notify Chart.js
   if (wt !== 'KPI') {
     const ro = new ResizeObserver(() => {
@@ -1026,6 +1105,7 @@ function updateState(s) {
 
   // SQL
   if (s.sql && !s.sql.startsWith('--') && !s.sql.startsWith('INSUFFICIENT')) {
+    _lastSqlQuery = s.sql;  // capture for addToCanvas
     document.getElementById('sql-code').textContent = s.sql;
     const conf = s.sql_confidence != null ? `conf ${(s.sql_confidence*100).toFixed(0)}%` : 'ready';
     document.getElementById('sql-conf-label').textContent = conf;
@@ -1114,80 +1194,193 @@ document.getElementById('copy-btn').addEventListener('click', function() {
   });
 });
 
+
+// ── Theme switcher ────────────────────────────────────────────────────
 const themes = {
   dark: {
-    "--bg": "#0b0f14",
-    "--canvas-bg": "#0d1117",
-    "--surface": "#161b22",
-    "--surface-2": "#1c2330",
-    "--border": "#272e38",
-    "--text": "#cdd9e5",
-    "--text-dim": "#768390",
-    "--accent": "#58a6ff"
+    '--bg':'#0b0f14','--canvas-bg':'#0d1117','--surface':'#161b22',
+    '--surface-2':'#1c2330','--border':'#272e38','--text':'#cdd9e5',
+    '--text-dim':'#768390','--text-muted':'#4d5768',
+    '--accent':'#58a6ff','--accent-dim':'#1c3354',
   },
-
   light: {
-    "--bg": "#f3f4f6",
-    "--canvas-bg": "#ffffff",
-    "--surface": "#ffffff",
-    "--surface-2": "#f1f5f9",
-    "--border": "#d1d5db",
-    "--text": "#111827",
-    "--text-dim": "#6b7280",
-    "--accent": "#2563eb"
+    '--bg':'#f3f4f6','--canvas-bg':'#ffffff','--surface':'#ffffff',
+    '--surface-2':'#f1f5f9','--border':'#d1d5db','--text':'#111827',
+    '--text-dim':'#6b7280','--text-muted':'#9ca3af',
+    '--accent':'#2563eb','--accent-dim':'#dbeafe',
   },
-
   blue: {
-    "--bg": "#0f172a",
-    "--canvas-bg": "#172554",
-    "--surface": "#1e293b",
-    "--surface-2": "#334155",
-    "--border": "#475569",
-    "--text": "#e2e8f0",
-    "--text-dim": "#94a3b8",
-    "--accent": "#3b82f6"
+    '--bg':'#0f172a','--canvas-bg':'#172554','--surface':'#1e293b',
+    '--surface-2':'#334155','--border':'#475569','--text':'#e2e8f0',
+    '--text-dim':'#94a3b8','--text-muted':'#64748b',
+    '--accent':'#3b82f6','--accent-dim':'#1c3354',
   },
-
   green: {
-    "--bg": "#07140c",
-    "--canvas-bg": "#0c1f12",
-    "--surface": "#102516",
-    "--surface-2": "#16321f",
-    "--border": "#245032",
-    "--text": "#d8ffe5",
-    "--text-dim": "#8ab89a",
-    "--accent": "#3fb950"
-  }
+    '--bg':'#07140c','--canvas-bg':'#0c1f12','--surface':'#102516',
+    '--surface-2':'#16321f','--border':'#245032','--text':'#d8ffe5',
+    '--text-dim':'#8ab89a','--text-muted':'#4a7a5a',
+    '--accent':'#3fb950','--accent-dim':'#1c3354',
+  },
 };
-function applyTheme(themeName) {
-  const theme = themes[themeName];
 
-  Object.entries(theme).forEach(([key, value]) => {
-    document.documentElement.style.setProperty(key, value);
+function applyTheme(name) {
+  const t = themes[name] || themes.dark;
+  Object.entries(t).forEach(([k,v]) => document.documentElement.style.setProperty(k, v));
+  localStorage.setItem('ds-theme', name);
+  document.querySelectorAll('.theme-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.theme === name);
   });
-
-  localStorage.setItem("theme", themeName);
-
-  document.querySelectorAll(".theme-btn").forEach(btn => {
-    btn.classList.remove("active");
-  });
-
-  document
-    .querySelector(`[data-theme="${themeName}"]`)
-    ?.classList.add("active");
 }
 
-document.querySelectorAll(".theme-btn").forEach(btn => {
-  btn.addEventListener("click", () => {
-    applyTheme(btn.dataset.theme);
-  });
+document.querySelectorAll('.theme-btn').forEach(btn => {
+  btn.addEventListener('click', () => applyTheme(btn.dataset.theme));
 });
 
-window.addEventListener("load", () => {
-  applyTheme(
-    localStorage.getItem("theme") || "dark"
-  );
+// Apply saved or default theme on load
+applyTheme(localStorage.getItem('ds-theme') || 'dark');
+
+// ── Publish ───────────────────────────────────────────────────────────
+const overlay     = document.getElementById('publish-overlay');
+const pubName     = document.getElementById('pub-name');
+const pubDesc     = document.getElementById('pub-desc');
+const pubStatus   = document.getElementById('pub-status');
+const pubConfirm  = document.getElementById('pub-confirm');
+
+// Open modal
+document.getElementById('publish-btn').addEventListener('click', () => {
+  const count = Object.keys(widgetRegistry).length;
+  if (count === 0) {
+    const hint = document.getElementById('canvas-empty');
+    hint.style.opacity = '1';
+    setTimeout(() => {
+      if (document.querySelector('.canvas-widget')) hint.style.opacity = '0';
+    }, 1500);
+    logEvent('err', 'No widgets on canvas to publish.');
+    return;
+  }
+  pubStatus.className = 'pub-status';
+  pubStatus.textContent = '';
+  pubName.value = '';
+  pubDesc.value = '';
+  overlay.classList.add('visible');
+  pubName.focus();
 });
+
+// Close modal
+document.getElementById('pub-cancel').addEventListener('click', () => {
+  overlay.classList.remove('visible');
+});
+overlay.addEventListener('click', e => {
+  if (e.target === overlay) overlay.classList.remove('visible');
+});
+pubName.addEventListener('keydown', e => {
+  if (e.key === 'Enter') pubConfirm.click();
+  if (e.key === 'Escape') overlay.classList.remove('visible');
+});
+
+// Collect live canvas geometry
+function collectCanvasState() {
+  const ca = document.getElementById('canvas-area');
+  return Array.from(ca.querySelectorAll('.canvas-widget')).map((el, i) => ({
+    uid:     el.id,
+    x:       parseInt(el.style.left)   || 0,
+    y:       parseInt(el.style.top)    || 0,
+    width:   el.offsetWidth,
+    height:  el.offsetHeight,
+    z_index: parseInt(el.style.zIndex) || (i + 1),
+  }));
+}
+
+// Sequential publish flow: create dashboard → create each widget
+pubConfirm.addEventListener('click', async () => {
+  const name = pubName.value.trim();
+  if (!name) {
+    pubName.focus();
+    pubName.style.borderColor = 'var(--red)';
+    setTimeout(() => { pubName.style.borderColor = ''; }, 1200);
+    return;
+  }
+
+  pubConfirm.disabled = true;
+  pubConfirm.textContent = 'Saving…';
+  pubStatus.className = 'pub-status';
+
+  try {
+    // 1 — create dashboard record
+    const dashRes = await fetch('/dashboards', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ name, description: pubDesc.value.trim() || null }),
+    });
+    if (!dashRes.ok) throw new Error(`Dashboard create failed (${dashRes.status})`);
+    const dash   = await dashRes.json();
+    const dashId = dash.id;
+    logEvent('out', `Dashboard created: id=${dashId} "${name}"`);
+
+    // 2 — save each canvas widget
+    const geometry = collectCanvasState();
+    const results  = await Promise.all(geometry.map(geo => {
+      const meta = widgetRegistry[geo.uid] || {};
+      return fetch(`/dashboards/${dashId}/widgets`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          widget_uid:  geo.uid,
+          widget_type: meta.widgetType || 'BARCHART',
+          title:       meta.query      || null,
+          x:           geo.x,
+          y:           geo.y,
+          width:       geo.width,
+          height:      geo.height,
+          z_index:     geo.z_index,
+          query:       meta.query      || null,
+          sql_query:   meta.sqlQuery   || null,
+          result_json: meta.result     || null,
+          config_json: null,
+        }),
+      });
+    }));
+
+    const failed = results.filter(r => !r.ok);
+    if (failed.length) throw new Error(`${failed.length} widget(s) failed to save.`);
+
+    logEvent('out', `${geometry.length} widget(s) saved → dashboard ${dashId}`);
+    pubStatus.textContent = `✓ Saved "${name}" with ${geometry.length} widget${geometry.length !== 1 ? 's' : ''}`;
+    pubStatus.className   = 'pub-status success';
+    pubConfirm.textContent = 'Saved!';
+    setTimeout(() => overlay.classList.remove('visible'), 1800);
+
+  } catch (err) {
+    logEvent('err', 'Publish failed: ' + err.message);
+    pubStatus.textContent = '✗ ' + err.message;
+    pubStatus.className   = 'pub-status error';
+    pubConfirm.textContent = 'Save Dashboard';
+    pubConfirm.disabled   = false;
+  }
+});
+
 </script>
+
+<!-- Publish modal -->
+<div id="publish-overlay">
+  <div id="publish-modal">
+    <h3>Publish Dashboard</h3>
+    <p>Give this dashboard a name. All widgets currently on the canvas will be saved with their positions, sizes, queries, and data.</p>
+    <div class="pub-field">
+      <span class="pub-label">Dashboard Name</span>
+      <input id="pub-name" class="pub-input" type="text" placeholder="e.g. Q3 Sales Overview" maxlength="80"/>
+    </div>
+    <div class="pub-field">
+      <span class="pub-label">Description (optional)</span>
+      <input id="pub-desc" class="pub-input" type="text" placeholder="Brief description…" maxlength="200"/>
+    </div>
+    <div id="pub-status" class="pub-status"></div>
+    <div class="pub-actions">
+      <button class="pub-cancel" id="pub-cancel">Cancel</button>
+      <button class="pub-confirm" id="pub-confirm">Save Dashboard</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>

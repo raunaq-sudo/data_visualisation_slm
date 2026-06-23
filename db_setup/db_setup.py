@@ -28,23 +28,44 @@ CREATE TABLE IF NOT EXISTS user_dashboard (
 );
 
 -- 3. Table: dashboard_widget_mapping
-CREATE TABLE IF NOT EXISTS dashboard_widget_mapping (
-    dashboard_id INTEGER,
-    widget_id INTEGER,
-    row_location INTEGER NOT NULL,
-    column_location INTEGER NOT NULL,
-    PRIMARY KEY (dashboard_id, widget_id),
-    FOREIGN KEY (dashboard_id) REFERENCES user_dashboard(dashboard_id) ON DELETE CASCADE
+CREATE TABLE dashboard (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    description TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 4. Table: widget_query_mapping
-CREATE TABLE IF NOT EXISTS widget_query_mapping (
-    widget_id TEXT PRIMARY KEY,
-    query TEXT NOT NULL,
-    status TEXT NOT NULL,
-    user_agent_conversation TEXT NOT NULL,
+CREATE TABLE dashboard_widget (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    dashboard_id INTEGER NOT NULL,
+
+    widget_uid TEXT NOT NULL UNIQUE,
+
     widget_type TEXT NOT NULL,
-    FOREIGN KEY (widget_id) REFERENCES dashboard_widget_mapping(widget_id) ON DELETE CASCADE
+    title TEXT,
+
+    x INTEGER NOT NULL,
+    y INTEGER NOT NULL,
+
+    width INTEGER NOT NULL,
+    height INTEGER NOT NULL,
+
+    query TEXT,
+    sql_query TEXT,
+
+    result_json TEXT,
+    config_json TEXT,
+
+    z_index INTEGER DEFAULT 1,
+
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (dashboard_id)
+        REFERENCES dashboard(id)
+        ON DELETE CASCADE
 );
 
 -- 5. Table: chat_message_history
