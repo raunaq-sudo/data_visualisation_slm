@@ -11,13 +11,14 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, ModelMessagesTypeAdapter
-from pydantic_ai.messages import ModelResponse, TextPart
+from pydantic_ai.messages import ModelRequest, ModelResponse, UserPromptPart, TextPart
 from pydantic_ai.output import NativeOutput
 from pydantic_ai.models.ollama import OllamaModel
 from pydantic_ai.profiles import ModelProfile
 from pydantic_ai._json_schema import InlineDefsJsonSchemaTransformer
-import config
+
 from system_prompts import build_intake_prompt
+import config
 
 # =====================================================================
 # 0. LOGGING
@@ -104,19 +105,6 @@ def update_widget(
     logger.info("Widget %s upserted (type=%s).", widget_id, widget_type)
 
 
-def execute_query(query: str, db_path: str = DB_FILE_PATH) -> list:
-    """Run a SELECT against the data db and return rows as list of dicts.
-
-    FIX 5: The db_path parameter was previously ignored — the body always
-    used DB_FILE_PATH directly. Now it honours the parameter correctly.
-    """
-    with get_db_connection(db_path) as conn:
-        cursor = conn.cursor()
-        cursor.execute(query)
-        columns = [c[0] for c in cursor.description]
-        return [dict(zip(columns, row)) for row in cursor.fetchall()]
-
-
 # =====================================================================
 # 2. SCHEMA DISCOVERY
 # =====================================================================
@@ -147,15 +135,28 @@ class SQLAgentDeps:
         self.schema = schema
 
 
+def execute_query(query, db_path=DB_FILE_PATH):
+    with get_db_connection(DB_FILE_PATH) as conn:
+        cursor = conn.cursor()
+
+        cursor.execute(query)
+
+        columns = [c[0] for c in cursor.description]
+
+        return [
+            dict(zip(columns, row))
+            for row in cursor.fetchall()
+        ]
 def generate_registry_from_metadata(
     db_path: str,
 ) -> Tuple[DataSourceSchema, List[TableDescription]]:
     if not os.path.exists(db_path):
-        logger.warning("Metadata database '%s' not found.", db_path)
+        logger.warning("Metadata database '%s' not found. Defaulting to empty schema.", db_path)
         return DataSourceSchema(source_name="empty_db", tables=[]), []
 
     with get_db_connection(db_path) as conn:
         cursor = conn.cursor()
+
         cursor.execute(
             """
             SELECT table_name, column_name, column_type, column_description
@@ -168,10 +169,12 @@ def generate_registry_from_metadata(
             tables_dict[table_name].append(
                 ColumnSchema(name=column_name, type=column_type, description=description)
             )
+
         table_schemas = [
             TableSchema(table_name=t, columns=cols)
             for t, cols in tables_dict.items()
         ]
+
         cursor.execute(
             """
             SELECT table_name, table_description
@@ -193,82 +196,43 @@ def generate_registry_from_metadata(
 
 
 db_schema, table_desc_deps = generate_registry_from_metadata(ADMIN_DB_PATH)
+sql_deps = SQLAgentDeps(schema=db_schema)
 
+# Build the intake system prompt once at startup with the schema embedded.
+# Rebuilding it here means the model receives a single self-contained system
+# prompt — no decorator injection, no deps plumbing, no attention-gap between
+# the rules and the data they reference.
 INTAKE_SYSTEM_PROMPT: str = build_intake_prompt(
     tables=db_schema.tables,
     table_descriptions=table_desc_deps,
 )
 logger.info("Intake system prompt built (%d chars).", len(INTAKE_SYSTEM_PROMPT))
-
-
-def build_sql_system_prompt(schema: DataSourceSchema) -> str:
-    """Build the SQL agent system prompt with schema embedded at startup.
-
-    FIX 8: The old system prompt said "Output ONLY a raw SQLite statement"
-    while the output_type was NativeOutput(SQLOutput) — direct contradiction.
-    The prompt now correctly describes the JSON output format the model must
-    produce, matching the SQLOutput schema exactly.
-    """
-    lines = [
-        "You are a SQL generator for SQLite databases.",
-        "You must return a JSON object with exactly these fields:",
-        "  sql_query            : the raw executable SQLite SELECT statement",
-        "  confidence           : float 0.0–1.0 (1.0 = certain, 0.0 = unsure)",
-        "  possible_data_errors : string describing potential issues, or null if none",
-        "",
-        "Rules:",
-        "  - Use ONLY the tables and columns listed in the schema below.",
-        "  - Do NOT invent columns or tables.",
-        "  - If the request cannot be satisfied with this schema, set sql_query to",
-        '    "INSUFFICIENT DATAPOINTS" and confidence to 0.0.',
-        "  - Never include LIMIT in sql_query — it will be applied separately.",
-        "",
-    ]
-    if not schema.tables:
-        lines.append("WARNING: No tables available.")
-    else:
-        lines.append(f"Database: {schema.source_name}")
-        lines.append("Schema:")
-        for table in schema.tables:
-            lines.append(f"  Table: {table.table_name}")
-            for col in table.columns:
-                col_line = f"    - {col.name} ({col.type})"
-                if col.description:
-                    col_line += f"  — {col.description}"
-                lines.append(col_line)
-    return "\n".join(lines)
-
-
-SQL_SYSTEM_PROMPT: str = build_sql_system_prompt(db_schema)
-logger.info("SQL system prompt built (%d chars).", len(SQL_SYSTEM_PROMPT))
-
+logger.info(f"Full prompt {INTAKE_SYSTEM_PROMPT}")
 
 # =====================================================================
-# 3. STRUCTURED OUTPUT SCHEMAS
+# 3. STRUCTURED OUTPUT SCHEMA
 # =====================================================================
 
 ALLOWED_WIDGETS = {"KPI", "BARCHART", "PIECHART", "LINECHART", "STACKEDBAR"}
 
 
 class IntakeState(BaseModel):
-    """Server-side conversation state carried across turns within a session."""
-    widget_type: Optional[str]       = None
-    query_description: Optional[str] = None
-    is_confirmed: bool               = False
+    widget_type:Optional[str] = Field(
+        default=None)
+    query_description:Optional[str] = Field(
+        default=None)
+    is_confirmed:bool = Field(default = False)
 
-    def reset(self) -> None:
-        """Clear state after a completed widget cycle."""
-        self.widget_type       = None
-        self.query_description = None
-        self.is_confirmed      = False
+
 
 
 class IntakeOutput(BaseModel):
     completeness: Literal[0.0, 0.3, 0.5, 0.7, 0.9, 1.0] = Field(
         description=(
-            "0.0=greeting/off-topic; 0.3=vague interest; "
-            "0.5=one of widget/query known; 0.7=both known awaiting confirm; "
-            "0.9=user confirmed; 1.0=fully done."
+            "How complete the user's data-visualisation request is. "
+            "0.0 = greeting/off-topic; 0.3 = vague interest; "
+            "0.5 = one of widget/query known; 0.7 = both known, awaiting confirm; "
+            "0.9 = user confirmed; 1.0 = fully done."
         ),
     )
     widget_type: Optional[str] = Field(
@@ -285,21 +249,10 @@ class IntakeOutput(BaseModel):
     )
     reply: str = Field(description="Your next message to the user.")
 
-
 class SQLOutput(BaseModel):
-    # FIX 6/7: Field() does not accept a positional string as description.
-    # Positional strings become the DEFAULT VALUE, not the description.
-    # All three fields now use the correct keyword argument.
-    sql_query: str = Field(
-        description="The raw executable SQLite SELECT statement, or 'INSUFFICIENT DATAPOINTS'."
-    )
-    confidence: float = Field(
-        description="Confidence score 0.0–1.0. 1.0 = certain the query is correct."
-    )
-    possible_data_errors: Optional[str] = Field(
-        default=None,
-        description="Potential issues with the query (missing columns, type mismatches, etc.), or null."
-    )
+    sql_query: str = Field("The sql query based on the user`s query description")
+    confidence: float = Field("The confidence based on query description and the query generated. 1.0 - High confidence, 0.0 - low confidence")
+    possible_data_errors: Optional[str] = Field("The errors that the query can lead to. For eg: missing columns, wrong data type, logical or semantic flaws etc.")
 
 
 # =====================================================================
@@ -318,18 +271,42 @@ local_qwen_model = OllamaModel(
     profile=_qwen25_local_profile,
 )
 
+# Intake agent: no deps, no decorator — just a plain system_prompt string
+# that already contains the schema. Simple, transparent, debuggable.
 intake_agent = Agent(
     model=local_qwen_model,
     output_type=NativeOutput(IntakeOutput),
     system_prompt=INTAKE_SYSTEM_PROMPT,
 )
 
+# SQL agent: deps still used here because the schema is referenced at
+# query-time and may need to be re-injected cleanly per request.
+# @sql_query_agent.system_prompt
+def inject_database_schema(schema) -> str:
+    if not schema.tables:
+        return "WARNING: No tables found. You cannot generate a valid SQL query."
+    lines = [f"Write SQLite for: '{schema.source_name}'.", "Schema:"]
+    for table in schema.tables:
+        lines.append(f"Table: {table.table_name}")
+        for col in table.columns:
+            lines.append(f"  - {col.name} ({col.type})")
+    return "\n".join(lines)
+
+
 sql_query_agent = Agent(
     model=local_qwen_model,
-    output_type=NativeOutput(SQLOutput),
     retries=3,
-    system_prompt=SQL_SYSTEM_PROMPT,
+    output_type= NativeOutput(SQLOutput),
+    system_prompt=(
+        "You are a strict SQL Generator. "
+        "Output ONLY a raw executable SQLite statement. Do not explain anything."
+        "You must follow the following schema only and donnot make up columns."
+        "If the current schema doesnt suffice respond with INSUFFICIENT DATAPOINTS"
+        f"{inject_database_schema(db_schema)}"
+    ),
 )
+
+
 
 
 # =====================================================================
@@ -359,14 +336,7 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str):
 
     message_history = load_chat_history(chat_id)
     is_new_chat = len(message_history) == 0
-
-    # FIX 3: IntakeState is initialised once per connection and updated
-    # BEFORE each prompt is built so the model always sees current values.
-    # On reconnect we can't recover state from the DB (it's not persisted
-    # separately), so state resets — acceptable because the stateless prompt
-    # approach already carries widget/query forward in the model's reply context.
     state = IntakeState()
-
     if is_new_chat:
         greeting = (
             "Hello! Let's configure a dashboard widget. "
@@ -377,61 +347,43 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str):
             "message": greeting,
             "system_status": {
                 "widget": None, "query": None,
-                "confirmed": False, "completeness": 0.0,
-                "sql": None, "result": [],
+                "confirmed": False, "completeness": 0.0, "sql": None,
             },
         })
         greeting_msg = ModelResponse(parts=[TextPart(content=greeting)])
         message_history = [greeting_msg]
         log_chat_history(chat_id, serialise_history(message_history))
-    else:
-        # FIX 9: Replay prior conversation to the frontend on reconnect.
-        for msg in message_history:
-            if msg.kind == "request":
-                for part in msg.parts:
-                    if part.part_kind == "user-prompt" and part.content:
-                        await websocket.send_json({
-                            "sender": "user",
-                            "message": part.content,
-                            "system_status": None,
-                        })
-            elif msg.kind == "response":
-                for part in msg.parts:
-                    if part.part_kind == "text" and part.content:
-                        await websocket.send_json({
-                            "sender": "agent",
-                            "message": part.content,
-                            "system_status": None,
-                        })
-        logger.info("[%s] Replayed %d messages.", chat_id, len(message_history))
-
+    
     try:
         while True:
             user_message = await websocket.receive_text()
 
             # ── Intake agent ───────────────────────────────────────────
             try:
-                logger.info("[%s] Calling Intake Agent...", chat_id)
+                logger.info("[%s] Calling Intake Agent ...",
+                            chat_id)
 
-                # FIX 3: State is injected into the prompt BEFORE running the
-                # agent so the model sees the values set on the PREVIOUS turn,
-                # not stale values from two turns ago.
-                prompt = (
-                    f"Current State:\n"
-                    f"  widget_type          = {state.widget_type}\n"
-                    f"  query_description    = {state.query_description}\n"
-                    f"  awaiting_confirmation = {state.is_confirmed is False and (state.widget_type is not None and state.query_description is not None)}\n"
-                    f"\nUser Message:\n{user_message}"
-                )
-                logger.info("[%s] Prompt:\n%s", chat_id, prompt)
+                prompt = f"""
+                Current State:
+                widget_type={state.widget_type}
+                query_description={state.query_description}
+                awaiting_confirmation={not state.is_confirmed}
 
+                User Message:
+                {user_message}
+                """
+                logger.info(prompt)
+
+                    
                 result = await intake_agent.run(
                     prompt,
+                    # message_history=message_history,
                     model_settings={"temperature": 0.1},
                 )
 
+                
                 intake: IntakeOutput = result.output
-
+                
                 # Server-side confirmation safety net
                 _user_lower = user_message.strip().lower().rstrip("!.,")
                 _is_affirmative = (
@@ -452,12 +404,6 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str):
                         update={"is_confirmed": True, "completeness": 0.9}
                     )
 
-                # FIX 3: Update state immediately after getting intake output,
-                # before any other logic, so the next turn's prompt is correct.
-                state.widget_type       = intake.widget_type
-                state.query_description = intake.query_description
-                state.is_confirmed      = intake.is_confirmed
-
                 logger.info(
                     "[%s] Intake → completeness=%s | widget=%s | confirmed=%s",
                     chat_id, intake.completeness, intake.widget_type, intake.is_confirmed,
@@ -470,17 +416,13 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str):
                     "message": "Processing issue encountered. Let's try that again.",
                     "system_status": {
                         "widget": None, "query": None,
-                        "confirmed": False, "completeness": 0.0,
-                        "sql": None, "result": [],
+                        "confirmed": False, "completeness": 0.0, "sql": None,
                     },
                 })
                 continue
 
             # ── SQL generation ─────────────────────────────────────────
-            generated_sql   = None
-            sql_confidence  = None
-            sql_data_errors = None
-            query_result: list = []
+            generated_sql = None
 
             if intake.completeness > 0.8 and intake.is_confirmed and intake.query_description:
                 if not db_schema.tables:
@@ -488,69 +430,56 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str):
                     logger.warning("[%s] SQL skipped: empty schema.", chat_id)
                 else:
                     try:
-                        logger.info("[%s] Generating SQL for: %s",
-                                    chat_id, intake.query_description)
+                        logger.info(f"Generate an accurate SQLite query for: {intake.query_description}")
                         sql_result = await sql_query_agent.run(
                             f"Generate an accurate SQLite query for: {intake.query_description}",
                             model_settings={"temperature": 0.1},
                         )
                         sql_output: SQLOutput = sql_result.output
-                        generated_sql   = sql_output.sql_query.strip()
-                        sql_confidence  = sql_output.confidence
-                        sql_data_errors = sql_output.possible_data_errors
-
-                        logger.info(
-                            "[%s] SQL generated. confidence=%.2f errors=%s",
-                            chat_id, sql_confidence or 0, sql_data_errors,
-                        )
+                        generated_sql = sql_output.sql_query.strip()
+                        print(generated_sql)
+                        logger.info(sql_output.confidence)
+                        
+                        logger.info("[%s] SQL generated.", chat_id)
                     except Exception as sql_err:
                         logger.error("[%s] SQL failed: %s", chat_id, sql_err)
                         generated_sql = f"-- Error: {sql_err}"
 
-                    # FIX 2: LIMIT is applied only to the execution call, never
-                    # stored in the DB. The clean SQL is what gets persisted.
-                    if generated_sql and not generated_sql.startswith(("--", "INSUFFICIENT")):
+                    if generated_sql and not generated_sql.startswith("--"):
                         update_widget(
                             widget_id=str(uuid4()),
                             user_conversation=intake.query_description,
-                            query=generated_sql,          # clean, no LIMIT
+                            query=generated_sql,
                             status="NEW",
                             widget_type=intake.widget_type,
                         )
-                        # FIX 1: execute_query only called when we have valid SQL.
-                        # LIMIT appended here only for the data fetch, not stored.
-                        try:
-                            query_result = execute_query(
-                                generated_sql + " LIMIT 100",
-                                db_path=DB_FILE_PATH,
-                            )
-                            logger.info("[%s] Query returned %d rows.", chat_id, len(query_result))
-                        except Exception as qerr:
-                            logger.error("[%s] Query execution failed: %s", chat_id, qerr)
-                            query_result = []
+                        generated_sql += " LIMIT 100"
 
-                # FIX 10: Reset state after a completed widget cycle so the next
-                # conversation starts clean instead of seeing is_confirmed=True.
-                state.reset()
                 message_history = []
 
             log_chat_history(chat_id, serialise_history(message_history))
+            result = []
+            try:
+                result = execute_query(query=generated_sql)
+            except Exception as err:
+                logger.error(str(err))
+
 
             await websocket.send_json({
                 "sender": "agent",
                 "message": intake.reply,
                 "system_status": {
-                    "widget":      intake.widget_type,
-                    "query":       intake.query_description,
-                    "confirmed":   intake.is_confirmed,
+                    "widget": intake.widget_type,
+                    "query": intake.query_description,
+                    "confirmed": intake.is_confirmed,
                     "completeness": intake.completeness,
-                    "sql":         generated_sql,
-                    "result":      query_result,
-                    # Extra diagnostic fields — useful in the Event Log
-                    "sql_confidence":  sql_confidence,
-                    "sql_data_errors": sql_data_errors,
+                    "sql": generated_sql,
+                    "result":result
                 },
             })
+            state.widget_type = intake.widget_type
+            state.query_description = intake.query_description
+            state.is_confirmed = intake.is_confirmed
 
     except WebSocketDisconnect:
         logger.warning("Session closed: [%s]", chat_id)
