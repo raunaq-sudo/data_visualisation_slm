@@ -1362,14 +1362,20 @@ function updateStatus(status){
   if (dashId) {
     const selectedWidget = document.querySelector('.canvas-widget.selected');
     if (selectedWidget){
-      
+
+      const body = JSON.stringify({
+          status: status,
+          sql_query: document.getElementById('sql-code').textContent
+        })
+      const body_rej = JSON.stringify({
+          status: status,
+          // sql_query: document.getElementById('sql-code').textContent
+        })
       const widget_uid = selectedWidget.id;
       fetch(`/dashboards/${dashId}/widgets/${widget_uid}`, {
         method:  'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          status: status
-        }),
+        body: status === 'APPROVED' ? body : body_rej,
       });
       
     }
