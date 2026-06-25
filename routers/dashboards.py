@@ -53,7 +53,7 @@ class WidgetCreate(BaseModel):
     sql_query:   Optional[str] = Field(default=None, description="Generated SQL (no LIMIT).")
     result_json: Optional[Any] = Field(default=None, description="Query result rows as JSON.")
     config_json: Optional[Any] = Field(default=None, description="Extra chart config.")
-
+    status:      str = Field(default="NEW", description="Status of the widget.")
 
 class WidgetPatch(BaseModel):
     """All fields optional — supports partial updates from drag/resize events."""
@@ -68,7 +68,7 @@ class WidgetPatch(BaseModel):
     sql_query:   Optional[str] = None
     result_json: Optional[Any] = None
     config_json: Optional[Any] = None
-
+    status: Optional[str] = None
 
 class WidgetRow(BaseModel):
     id:          int
@@ -236,15 +236,30 @@ def create_widget(dashboard_id: int, body: WidgetCreate):
                 (dashboard_id, widget_uid, widget_type, title,
                  x, y, width, height, z_index,
                  query, sql_query, result_json, config_json,
-                 created_at, updated_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                 created_at, updated_at, status)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(widget_uid)
+            DO UPDATE SET
+                dashboard_id = excluded.dashboard_id,
+                widget_type = excluded.widget_type,
+                title = excluded.title,
+                x = excluded.x,
+                y = excluded.y,
+                width = excluded.width,
+                height = excluded.height,
+                z_index = excluded.z_index,
+                query = excluded.query,
+                sql_query = excluded.sql_query,
+                result_json = excluded.result_json,
+                config_json = excluded.config_json,
+                updated_at = excluded.updated_at;
             """,
             (dashboard_id, body.widget_uid, body.widget_type, body.title,
              body.x, body.y, body.width, body.height, body.z_index,
-             body.query, body.sql_query, result_str, config_str, now, now),
+             body.query, body.sql_query, result_str, config_str, now, now, body.status),
         )
         row = db.execute(
-            "SELECT * FROM dashboard_widget WHERE id = ?", (cur.lastrowid,)
+            "SELECT * FROM dashboard_widget WHERE widget_uid = ?", (body.widget_uid,)
         ).fetchone()
     return _row_to_widget(row)
 
@@ -282,7 +297,7 @@ def update_widget_endpoint(dashboard_id: int, widget_uid: str, body: WidgetPatch
         _get_widget_or_404(db, dashboard_id, widget_uid)
 
         fields, vals = [], []
-        simple = ("widget_type","title","x","y","width","height","z_index","query","sql_query")
+        simple = ("widget_type","title","x","y","width","height","z_index","query","sql_query", "status")
         for col in simple:
             v = getattr(body, col)
             if v is not None:

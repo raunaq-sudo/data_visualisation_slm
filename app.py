@@ -6,7 +6,7 @@ from collections import defaultdict
 from contextlib import contextmanager
 from typing import List, Literal, Optional, Tuple
 from uuid import uuid4
-
+import config
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel, Field
@@ -16,7 +16,7 @@ from pydantic_ai.output import NativeOutput
 from pydantic_ai.models.ollama import OllamaModel
 from pydantic_ai.profiles import ModelProfile
 from pydantic_ai._json_schema import InlineDefsJsonSchemaTransformer
-import config
+
 from system_prompts import build_intake_prompt
 from routers import dashboards as dashboards_router
 from routers import metadata   as metadata_router
@@ -573,11 +573,24 @@ async def get_index():
     html_path = os.path.join(here, "frontend.html")
     if os.path.exists(html_path):
         return FileResponse(html_path, media_type="text/html")
-    return HTMLResponse(
-        "<h2 style='font-family:sans-serif;padding:2rem'>"
-        "frontend.html not found — place it next to app.py</h2>",
-    )
+    return HTMLResponse("<h2 style='font-family:sans-serif;padding:2rem'>frontend.html not found.</h2>")
 
+
+@app.get("/dashboards.html")
+async def get_dashboards_page():
+    here = os.path.dirname(os.path.abspath(__file__))
+    html_path = os.path.join(here, "dashboards.html")
+    if os.path.exists(html_path):
+        return FileResponse(html_path, media_type="text/html")
+    return HTMLResponse("<h2 style='font-family:sans-serif;padding:2rem'>dashboards.html not found.</h2>")
+
+@app.get("/data_steward.html")
+async def get_dashboards_page():
+    here = os.path.dirname(os.path.abspath(__file__))
+    html_path = os.path.join(here, "data_steward.html")
+    if os.path.exists(html_path):
+        return FileResponse(html_path, media_type="text/html")
+    return HTMLResponse("<h2 style='font-family:sans-serif;padding:2rem'>dashboards.html not found.</h2>")
 
 if __name__ == "__main__":
     import uvicorn
