@@ -5,8 +5,9 @@
   <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
   <title>Dashboard Studio</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-zoom/2.0.1/chartjs-plugin-zoom.min.js"></script>
   <style>
-    /* ── Design tokens ───────────────────────────────────────────── */
     :root {
       --bg:         #0b0f14;
       --canvas-bg:  #0d1117;
@@ -31,465 +32,267 @@
       --c0:#58a6ff;--c1:#3fb950;--c2:#d29922;--c3:#f85149;
       --c4:#bc8cff;--c5:#39d5ff;--c6:#ff7b72;--c7:#ffa657;
     }
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:var(--sans);background:var(--canvas-bg);color:var(--text);height:100dvh;display:flex;flex-direction:column;overflow:hidden;}
 
-    *,*::before,*::after { box-sizing:border-box; margin:0; padding:0 }
+    /* ── Topbar ── */
+    #topbar{height:var(--topbar-h);flex-shrink:0;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 14px;gap:10px;z-index:100;}
+    .logo{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--accent);letter-spacing:.06em;}
+    .top-sep{width:1px;height:16px;background:var(--border);}
+    .session-tag{font-family:var(--mono);font-size:10px;color:var(--text-muted);}
+    .mode-badge{display:none;font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--orange);background:#2e2008;border:1px solid #5a4010;padding:2px 8px;border-radius:20px;}
+    body.mode-review .mode-badge{display:inline-block;}
+    #conn-wrap{margin-left:auto;display:flex;align-items:center;gap:6px;}
+    #conn-dot{width:7px;height:7px;border-radius:50%;background:var(--text-muted);transition:background .3s;}
+    #conn-dot.live{background:var(--green);box-shadow:0 0 5px var(--green);}
+    #conn-dot.error{background:var(--red);}
+    #conn-label{font-size:10px;color:var(--text-muted);}
 
-    body {
-      font-family: var(--sans);
-      background:  var(--canvas-bg);
-      color:       var(--text);
-      height:      100dvh;
-      display:     flex;
-      flex-direction: column;
-      overflow:    hidden;
-    }
+    /* ── Theme ── */
+    .theme-switcher{display:flex;align-items:center;gap:3px;padding:3px;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;}
+    .theme-btn{width:26px;height:26px;border:none;border-radius:4px;background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px;transition:background .15s;}
+    .theme-btn:hover{background:var(--border);}
+    .theme-btn.active{background:var(--accent);}
 
-    /* ── Topbar ─────────────────────────────────────────────────── */
-    #topbar {
-      height:      var(--topbar-h);
-      flex-shrink: 0;
-      background:  var(--surface);
-      border-bottom: 1px solid var(--border);
-      display:     flex;
-      align-items: center;
-      padding:     0 14px;
-      gap:         10px;
-      z-index:     100;
-    }
-    .logo { font-family:var(--mono); font-size:12px; font-weight:700; color:var(--accent); letter-spacing:.06em; }
-    .top-sep { width:1px; height:16px; background:var(--border); }
-    .session-tag { font-family:var(--mono); font-size:10px; color:var(--text-muted); }
+    /* ── Mode guards ── */
+    body.mode-review .builder-only{display:none !important;}
+    body.mode-builder .review-only{display:none !important;}
 
-    /* Mode badge — shown in review mode */
-    .mode-badge {
-      display:       none;
-      font-family:   var(--mono);
-      font-size:     9px;
-      font-weight:   700;
-      letter-spacing:.08em;
-      text-transform:uppercase;
-      color:         var(--orange);
-      background:    #2e2008;
-      border:        1px solid #5a4010;
-      padding:       2px 8px;
-      border-radius: 20px;
-    }
-    body.mode-review .mode-badge { display:inline-block; }
+    /* ── Buttons ── */
+    .publish-btn{background:#2388ff;color:#fff;border:1px solid #3b9cff;border-radius:var(--r);font-size:11px;font-weight:600;padding:4px 12px;cursor:pointer;display:flex;align-items:center;gap:5px;white-space:nowrap;transition:background .15s,box-shadow .15s;box-shadow:0 0 10px rgba(35,136,255,.25);flex-shrink:0;}
+    .publish-btn:hover{background:#3b9cff;box-shadow:0 0 16px rgba(88,166,255,.4);}
+    .publish-btn:active{transform:translateY(1px);}
+    .tog-btn{background:transparent;border:1px solid var(--border);border-radius:var(--r);color:var(--text-dim);font-size:11px;padding:3px 9px;cursor:pointer;display:flex;align-items:center;gap:5px;transition:border-color .15s,color .15s;white-space:nowrap;}
+    .tog-btn:hover{border-color:var(--accent);color:var(--accent);}
+    .pub-confirm{background:#2388ff;border:1px solid #3b9cff;border-radius:5px;color:#fff;font-size:12px;font-weight:700;padding:6px 18px;cursor:pointer;transition:background .15s;}
+    .pub-confirm:hover{background:#3b9cff;}
+    .pub-confirm:disabled{opacity:.4;cursor:default;}
+    .pub-cancel{background:transparent;border:1px solid var(--border);border-radius:5px;color:var(--text-dim);font-size:12px;padding:6px 14px;cursor:pointer;transition:border-color .15s,color .15s;}
+    .pub-cancel:hover{border-color:var(--border-hi);color:var(--text);}
 
-    #conn-wrap { margin-left:auto; display:flex; align-items:center; gap:6px; }
-    #conn-dot  { width:7px; height:7px; border-radius:50%; background:var(--text-muted); transition:background .3s; }
-    #conn-dot.live  { background:var(--green); box-shadow:0 0 5px var(--green); }
-    #conn-dot.error { background:var(--red); }
-    #conn-label { font-size:10px; color:var(--text-muted); }
+    /* ── Main ── */
+    #main{flex:1;display:flex;overflow:hidden;position:relative;}
 
-    /* ── Theme switcher ─────────────────────────────────────────── */
-    .theme-switcher {
-      display:flex; align-items:center; gap:3px;
-      padding:3px; background:var(--surface-2);
-      border:1px solid var(--border); border-radius:6px;
-    }
-    .theme-btn {
-      width:26px; height:26px; border:none; border-radius:4px;
-      background:transparent; cursor:pointer;
-      display:flex; align-items:center; justify-content:center;
-      font-size:13px; transition:background .15s;
-    }
-    .theme-btn:hover  { background:var(--border); }
-    .theme-btn.active { background:var(--accent); }
+    /* ── Chat panel ── */
+    #chat-panel{width:var(--panel-w);min-width:var(--panel-w);background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;transition:width .25s ease,min-width .25s ease,opacity .2s;z-index:10;}
+    #chat-panel.collapsed{width:0;min-width:0;opacity:0;pointer-events:none;}
+    .panel-header{flex-shrink:0;padding:9px 12px;font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text-muted);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
+    #chat-box{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px;scroll-behavior:smooth;}
+    #chat-box::-webkit-scrollbar{width:3px;}
+    #chat-box::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
+    .bubble{max-width:92%;padding:7px 11px;border-radius:var(--r);font-size:12px;line-height:1.6;word-break:break-word;}
+    .bubble.agent{background:var(--surface-2);border:1px solid var(--border);align-self:flex-start;}
+    .bubble.user{background:var(--accent-dim);border:1px solid #2a4a7a;align-self:flex-end;}
+    .bubble.system{align-self:center;color:var(--text-muted);font-size:10px;font-style:italic;background:transparent;border:none;}
+    .bubble .blbl{font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;margin-bottom:3px;}
+    .bubble.agent .blbl{color:var(--accent);}
+    .bubble.user  .blbl{color:#8bc4ff;}
+    .chat-chart-wrap{margin-top:6px;background:var(--bg);border:1px solid var(--border);border-radius:var(--r);padding:10px;position:relative;}
+    .chat-chart-wrap canvas{max-height:140px;}
+    .chat-kpi-inline{text-align:center;padding:8px 0;}
+    .chat-kpi-inline .kv{font-family:var(--mono);font-size:28px;font-weight:700;color:var(--accent);}
+    .chat-kpi-inline .kl{font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em;margin-top:2px;}
+    .add-to-canvas-btn{position:absolute;top:6px;right:6px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r);color:var(--text-dim);font-size:10px;padding:2px 8px;cursor:pointer;transition:border-color .15s,color .15s;}
+    .add-to-canvas-btn:hover{border-color:var(--accent);color:var(--accent);}
+    #input-row{flex-shrink:0;display:flex;gap:6px;padding:8px 10px;border-top:1px solid var(--border);}
+    #user-input{flex:1;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r);color:var(--text);font-family:var(--sans);font-size:12px;padding:6px 9px;outline:none;transition:border-color .15s;}
+    #user-input:focus{border-color:var(--accent);}
+    #user-input:disabled{opacity:.4;}
+    #send-btn{background:var(--accent);color:#0b0f14;border:none;border-radius:var(--r);font-size:12px;font-weight:700;padding:6px 14px;cursor:pointer;transition:opacity .15s;}
+    #send-btn:hover:not(:disabled){opacity:.85;}
+    #send-btn:disabled{opacity:.3;cursor:default;}
 
-    /* ── Publish button — builder only ──────────────────────────── */
-    .publish-btn {
-      background:#2388ff; color:#fff;
-      border:1px solid #3b9cff; border-radius:var(--r);
-      font-size:11px; font-weight:600; padding:4px 12px;
-      cursor:pointer; display:flex; align-items:center; gap:5px;
-      white-space:nowrap; transition:background .15s, box-shadow .15s;
-      box-shadow:0 0 10px rgba(35,136,255,.25); flex-shrink:0;
-    }
-    .publish-btn:hover  { background:#3b9cff; box-shadow:0 0 16px rgba(88,166,255,.4); }
-    .publish-btn:active { transform:translateY(1px); }
+    /* ── Canvas ── */
+    #canvas-area{flex:1;position:relative;overflow:hidden;background-color:var(--canvas-bg);background-image:radial-gradient(circle,var(--border) 1px,transparent 1px);background-size:24px 24px;}
+    #canvas-empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;pointer-events:none;transition:opacity .3s;}
+    #canvas-empty .empty-icon{font-size:28px;opacity:.15;}
+    #canvas-empty p{font-size:12px;color:var(--text-muted);opacity:.5;}
 
-    /* Hidden in review mode */
-    body.mode-review .builder-only { display:none !important; }
-    /* Hidden in builder mode */
-    body.mode-builder .review-only { display:none !important; }
+    /* ── Widgets ── */
+    .canvas-widget{position:absolute;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:0 4px 20px rgba(0,0,0,.5);display:flex;flex-direction:column;overflow:hidden;min-width:200px;min-height:140px;}
+    body.mode-builder .canvas-widget{resize:both;}
+    .canvas-widget:hover{border-color:var(--border-hi);}
+    .canvas-widget.active{border-color:var(--accent);z-index:50;}
+    .canvas-widget.selected{border-color:var(--accent);box-shadow:0 0 0 2px rgba(88,166,255,.25);}
+    .cw-header{flex-shrink:0;padding:6px 10px;background:var(--surface-2);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:6px;user-select:none;}
+    body.mode-builder .cw-header{cursor:grab;}
+    body.mode-builder .cw-header:active{cursor:grabbing;}
+    .cw-type-badge{font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.08em;color:var(--accent);background:var(--accent-dim);padding:1px 6px;border-radius:3px;}
+    .cw-title{font-size:11px;color:var(--text-dim);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .cw-close{background:transparent;border:none;color:var(--text-muted);font-size:13px;cursor:pointer;padding:0 2px;line-height:1;transition:color .1s;}
+    .cw-close:hover{color:var(--red);}
+    body.mode-review .cw-close{display:none;}
+    .cw-body{flex:1;padding:10px;overflow:hidden;display:flex;align-items:center;justify-content:center;position:relative;}
+    .cw-body canvas{width:100% !important;height:100% !important;}
 
-    /* ── Toggle buttons ─────────────────────────────────────────── */
-    .tog-btn {
-      background:transparent; border:1px solid var(--border);
-      border-radius:var(--r); color:var(--text-dim); font-size:11px;
-      padding:3px 9px; cursor:pointer;
-      display:flex; align-items:center; gap:5px;
-      transition:border-color .15s, color .15s; white-space:nowrap;
+    /* Reset zoom button — appears on chart widget hover */
+    .zoom-reset-btn{
+      position:absolute;top:6px;right:6px;
+      background:var(--surface-2);border:1px solid var(--border);
+      border-radius:var(--r);color:var(--text-muted);font-size:9px;
+      padding:2px 7px;cursor:pointer;opacity:0;
+      transition:opacity .15s,border-color .15s,color .15s;
+      pointer-events:none;z-index:10;
     }
-    .tog-btn:hover { border-color:var(--accent); color:var(--accent); }
-    .tog-btn svg   { flex-shrink:0; }
+    .cw-body:hover .zoom-reset-btn{opacity:1;pointer-events:auto;}
+    .zoom-reset-btn:hover{border-color:var(--accent);color:var(--accent);}
 
-    /* ── Main area ──────────────────────────────────────────────── */
-    #main { flex:1; display:flex; overflow:hidden; position:relative; }
+    /* Zoom hint */
+    .zoom-hint{
+      position:absolute;bottom:6px;left:50%;transform:translateX(-50%);
+      font-size:9px;color:var(--text-muted);opacity:0;
+      transition:opacity .2s;pointer-events:none;white-space:nowrap;
+    }
+    .cw-body:hover .zoom-hint{opacity:.6;}
 
-    /* ── Chat panel — builder only ──────────────────────────────── */
-    #chat-panel {
-      width:var(--panel-w); min-width:var(--panel-w);
-      background:var(--surface); border-right:1px solid var(--border);
-      display:flex; flex-direction:column; overflow:hidden;
-      transition:width .25s ease, min-width .25s ease, opacity .2s;
-      z-index:10;
-    }
-    #chat-panel.collapsed { width:0; min-width:0; opacity:0; pointer-events:none; }
+    /* KPI */
+    .kpi-canvas{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;width:100%;}
+    .kpi-canvas .kv{font-family:var(--mono);font-size:36px;font-weight:700;color:var(--accent);line-height:1;}
+    .kpi-canvas .kl{font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em;}
+    .kpi-canvas .ks{font-size:10px;color:var(--text-muted);font-family:var(--mono);margin-top:4px;}
 
-    .panel-header {
-      flex-shrink:0; padding:9px 12px;
-      font-size:10px; font-weight:700; letter-spacing:.1em;
-      text-transform:uppercase; color:var(--text-muted);
-      border-bottom:1px solid var(--border);
-      display:flex; align-items:center; justify-content:space-between;
+    /* ── TABLE widget ── */
+    .table-wrap{width:100%;height:100%;overflow:auto;}
+    .table-wrap::-webkit-scrollbar{width:4px;height:4px;}
+    .table-wrap::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
+    .data-table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:10px;}
+    .data-table th{
+      position:sticky;top:0;
+      background:var(--surface-2);color:var(--text-dim);
+      font-size:9px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;
+      padding:5px 8px;border-bottom:1px solid var(--border);
+      text-align:left;white-space:nowrap;
     }
+    .data-table td{
+      padding:4px 8px;border-bottom:1px solid rgba(39,46,56,.5);
+      color:var(--text);white-space:nowrap;
+    }
+    .data-table tr:last-child td{border-bottom:none;}
+    .data-table tr:hover td{background:var(--surface-2);}
+    .data-table td.num{color:var(--accent);text-align:right;}
+    .table-meta{font-size:9px;color:var(--text-muted);padding:4px 0 0;flex-shrink:0;}
 
-    #chat-box {
-      flex:1; overflow-y:auto; padding:12px;
-      display:flex; flex-direction:column; gap:8px; scroll-behavior:smooth;
-    }
-    #chat-box::-webkit-scrollbar { width:3px; }
-    #chat-box::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+    /* chat inline table */
+    .chat-table-wrap{margin-top:6px;overflow:auto;max-height:160px;border:1px solid var(--border);border-radius:var(--r);}
+    .chat-table-wrap::-webkit-scrollbar{width:3px;height:3px;}
+    .chat-table-wrap::-webkit-scrollbar-thumb{background:var(--border);}
 
-    .bubble {
-      max-width:92%; padding:7px 11px; border-radius:var(--r);
-      font-size:12px; line-height:1.6; word-break:break-word;
-    }
-    .bubble.agent  { background:var(--surface-2); border:1px solid var(--border); align-self:flex-start; }
-    .bubble.user   { background:var(--accent-dim); border:1px solid #2a4a7a; align-self:flex-end; }
-    .bubble.system { align-self:center; color:var(--text-muted); font-size:10px; font-style:italic; background:transparent; border:none; }
-    .bubble .blbl  { font-size:9px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; margin-bottom:3px; }
-    .bubble.agent .blbl { color:var(--accent); }
-    .bubble.user  .blbl { color:#8bc4ff; }
+    /* ── Inspector ── */
+    #inspector{width:var(--panel-w);min-width:var(--panel-w);background:var(--surface);border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;transition:width .25s ease,min-width .25s ease,opacity .2s;z-index:10;}
+    #inspector.collapsed{width:0;min-width:0;opacity:0;pointer-events:none;}
+    #inspector-scroll{flex:1;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:10px;}
+    #inspector-scroll::-webkit-scrollbar{width:3px;}
+    #inspector-scroll::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
+    .insp-section{border:1px solid var(--border);border-radius:var(--r);overflow:hidden;}
+    .insp-section-hdr{padding:7px 10px;font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text-muted);background:var(--surface-2);display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;transition:color .15s;}
+    .insp-section-hdr:hover{color:var(--text);}
+    .insp-section-hdr .chevron{transition:transform .2s;font-size:10px;}
+    .insp-section.open .chevron{transform:rotate(180deg);}
+    .insp-section-body{display:none;padding:10px;}
+    .insp-section.open .insp-section-body{display:block;}
+    .meter-row{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px;}
+    .meter-val{font-family:var(--mono);font-size:20px;font-weight:700;}
+    .meter-gate{font-size:10px;font-weight:600;}
+    .prog-track{background:var(--surface-2);border-radius:2px;height:5px;overflow:hidden;}
+    .prog-fill{height:100%;border-radius:2px;width:0%;background:var(--text-muted);transition:width .4s cubic-bezier(.4,0,.2,1),background .3s;}
+    .step-labels{display:flex;justify-content:space-between;margin-top:3px;}
+    .step-labels span{font-family:var(--mono);font-size:8px;color:var(--border);}
+    .slot-row{padding:6px 0;border-bottom:1px solid var(--border);}
+    .slot-row:last-child{border-bottom:none;}
+    .slot-key{font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);margin-bottom:2px;}
+    .slot-val{font-family:var(--mono);font-size:11px;word-break:break-word;}
+    .slot-val.empty{color:var(--text-muted);font-style:italic;}
+    .slot-val.filled{color:var(--green);}
+    .badge{display:inline-block;font-size:9px;font-weight:700;letter-spacing:.05em;padding:2px 7px;border-radius:20px;text-transform:uppercase;}
+    .badge.confirmed{background:#1a3a1f;color:var(--green);border:1px solid #2a5a2f;}
+    .badge.pending{background:#2e2008;color:var(--orange);border:1px solid #5a4010;}
+    .badge.inactive{background:var(--surface-2);color:var(--text-muted);border:1px solid var(--border);}
+    .sql-copy-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;flex-wrap:wrap;gap:4px;}
+    .sql-copy-row span{font-size:9px;color:var(--text-muted);}
+    .sql-action-btn{background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r);color:var(--text-muted);font-size:10px;padding:2px 8px;cursor:pointer;}
+    .sql-action-btn:hover{color:var(--text);border-color:var(--accent);}
+    pre{background:var(--bg);border:1px solid var(--border);border-radius:var(--r);padding:8px;overflow-x:auto;margin:0;}
+    code{font-family:var(--mono);font-size:10px;color:var(--sql-text);line-height:1.6;white-space:pre;}
+    #debug-log{font-family:var(--mono);font-size:10px;color:var(--text-muted);display:flex;flex-direction:column;gap:2px;max-height:130px;overflow-y:auto;}
+    #debug-log::-webkit-scrollbar{width:2px;}
+    #debug-log::-webkit-scrollbar-thumb{background:var(--border);}
+    .log-entry{display:flex;gap:6px;}
+    .log-ts{color:var(--border);flex-shrink:0;}
+    .log-in{color:var(--accent);}
+    .log-out{color:var(--green);}
+    .log-err{color:var(--red);}
+    .log-sys{color:var(--orange);}
+    .replay-div{display:flex;align-items:center;gap:6px;padding:2px 0;}
+    .replay-div span{font-size:9px;color:var(--text-muted);white-space:nowrap;}
+    .replay-div::before,.replay-div::after{content:'';flex:1;height:1px;background:var(--border);}
 
-    .chat-chart-wrap {
-      margin-top:6px; background:var(--bg);
-      border:1px solid var(--border); border-radius:var(--r);
-      padding:10px; position:relative;
-    }
-    .chat-chart-wrap canvas { max-height:140px; }
-    .chat-kpi-inline { text-align:center; padding:8px 0; }
-    .chat-kpi-inline .kv { font-family:var(--mono); font-size:28px; font-weight:700; color:var(--accent); }
-    .chat-kpi-inline .kl { font-size:10px; color:var(--text-muted); text-transform:uppercase; letter-spacing:.1em; margin-top:2px; }
-    .add-to-canvas-btn {
-      position:absolute; top:6px; right:6px;
-      background:var(--surface-2); border:1px solid var(--border);
-      border-radius:var(--r); color:var(--text-dim); font-size:10px;
-      padding:2px 8px; cursor:pointer; transition:border-color .15s, color .15s;
-    }
-    .add-to-canvas-btn:hover { border-color:var(--accent); color:var(--accent); }
+    /* ── Publish modal ── */
+    #publish-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:200;align-items:center;justify-content:center;}
+    #publish-overlay.visible{display:flex;}
+    #publish-modal{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:24px 28px;width:380px;display:flex;flex-direction:column;gap:14px;box-shadow:0 20px 60px rgba(0,0,0,.6);}
+    #publish-modal h3{font-size:14px;font-weight:700;color:var(--text);margin:0;}
+    #publish-modal p{font-size:11px;color:var(--text-dim);margin:0;line-height:1.5;}
+    .pub-field{display:flex;flex-direction:column;gap:5px;}
+    .pub-label{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);}
+    .pub-input{background:var(--surface-2);border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:var(--sans);font-size:12px;padding:7px 10px;outline:none;transition:border-color .15s;}
+    .pub-input:focus{border-color:var(--accent);}
+    .pub-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:4px;}
+    .pub-status{font-size:11px;padding:6px 10px;border-radius:4px;display:none;}
+    .pub-status.success{background:#1a3a1f;color:var(--green);border:1px solid #2a5a2f;display:block;}
+    .pub-status.error{background:#3a1a1a;color:var(--red);border:1px solid #5a2a2f;display:block;}
 
-    #input-row {
-      flex-shrink:0; display:flex; gap:6px;
-      padding:8px 10px; border-top:1px solid var(--border);
-    }
-    #user-input {
-      flex:1; background:var(--surface-2); border:1px solid var(--border);
-      border-radius:var(--r); color:var(--text);
-      font-family:var(--sans); font-size:12px; padding:6px 9px;
-      outline:none; transition:border-color .15s;
-    }
-    #user-input:focus    { border-color:var(--accent); }
-    #user-input:disabled { opacity:.4; }
-    #send-btn {
-      background:var(--accent); color:#0b0f14; border:none;
-      border-radius:var(--r); font-size:12px; font-weight:700;
-      padding:6px 14px; cursor:pointer; transition:opacity .15s;
-    }
-    #send-btn:hover:not(:disabled) { opacity:.85; }
-    #send-btn:disabled { opacity:.3; cursor:default; }
-
-    /* ── Canvas ─────────────────────────────────────────────────── */
-    #canvas-area {
-      flex:1; position:relative; overflow:hidden;
-      background-color:var(--canvas-bg);
-      background-image:radial-gradient(circle, var(--border) 1px, transparent 1px);
-      background-size:24px 24px;
-    }
-    #canvas-empty {
-      position:absolute; inset:0;
-      display:flex; flex-direction:column;
-      align-items:center; justify-content:center;
-      gap:8px; pointer-events:none; transition:opacity .3s;
-    }
-    #canvas-empty .empty-icon { font-size:28px; opacity:.15; }
-    #canvas-empty p { font-size:12px; color:var(--text-muted); opacity:.5; }
-
-    /* ── Canvas widgets ─────────────────────────────────────────── */
-    .canvas-widget {
-      position:absolute; background:var(--surface);
-      border:1px solid var(--border); border-radius:var(--r);
-      box-shadow:0 4px 20px rgba(0,0,0,.5);
-      display:flex; flex-direction:column; overflow:hidden;
-      min-width:200px; min-height:140px;
-    }
-    /* Resize handle only in builder mode */
-    body.mode-builder .canvas-widget { resize:both; }
-    .canvas-widget:hover   { border-color:var(--border-hi); }
-    .canvas-widget.active  { border-color:var(--accent); z-index:50; }
-    .canvas-widget.selected {
-      border-color:var(--accent);
-      box-shadow:0 0 0 2px rgba(88,166,255,.25);
-    }
-
-    .cw-header {
-      flex-shrink:0; padding:6px 10px; background:var(--surface-2);
-      border-bottom:1px solid var(--border);
-      display:flex; align-items:center; gap:6px;
-      user-select:none;
-    }
-    /* Drag cursor only in builder mode */
-    body.mode-builder .cw-header { cursor:grab; }
-    body.mode-builder .cw-header:active { cursor:grabbing; }
-
-    .cw-type-badge {
-      font-family:var(--mono); font-size:9px; font-weight:700;
-      letter-spacing:.08em; color:var(--accent); background:var(--accent-dim);
-      padding:1px 6px; border-radius:3px;
-    }
-    .cw-title {
-      font-size:11px; color:var(--text-dim); flex:1;
-      overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
-    }
-    /* Close button — builder only (hidden in review) */
-    .cw-close {
-      background:transparent; border:none; color:var(--text-muted);
-      font-size:13px; cursor:pointer; padding:0 2px; line-height:1;
-      transition:color .1s;
-    }
-    .cw-close:hover { color:var(--red); }
-    body.mode-review .cw-close { display:none; }
-
-    .cw-body {
-      flex:1; padding:10px; overflow:hidden;
-      display:flex; align-items:center; justify-content:center;
-    }
-    .cw-body canvas { width:100% !important; height:100% !important; }
-
-    .kpi-canvas {
-      display:flex; flex-direction:column;
-      align-items:center; justify-content:center; gap:4px; width:100%;
-    }
-    .kpi-canvas .kv { font-family:var(--mono); font-size:36px; font-weight:700; color:var(--accent); line-height:1; }
-    .kpi-canvas .kl { font-size:10px; color:var(--text-muted); text-transform:uppercase; letter-spacing:.1em; }
-    .kpi-canvas .ks { font-size:10px; color:var(--text-muted); font-family:var(--mono); margin-top:4px; }
-
-    /* ── Inspector ──────────────────────────────────────────────── */
-    #inspector {
-      width:var(--panel-w); min-width:var(--panel-w);
-      background:var(--surface); border-left:1px solid var(--border);
-      display:flex; flex-direction:column; overflow:hidden;
-      transition:width .25s ease, min-width .25s ease, opacity .2s;
-      z-index:10;
-    }
-    #inspector.collapsed { width:0; min-width:0; opacity:0; pointer-events:none; }
-    #inspector-scroll {
-      flex:1; overflow-y:auto; padding:10px;
-      display:flex; flex-direction:column; gap:10px;
-    }
-    #inspector-scroll::-webkit-scrollbar { width:3px; }
-    #inspector-scroll::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
-
-    .insp-section { border:1px solid var(--border); border-radius:var(--r); overflow:hidden; }
-    .insp-section-hdr {
-      padding:7px 10px; font-size:9px; font-weight:700;
-      letter-spacing:.1em; text-transform:uppercase; color:var(--text-muted);
-      background:var(--surface-2);
-      display:flex; justify-content:space-between; align-items:center;
-      cursor:pointer; user-select:none; transition:color .15s;
-    }
-    .insp-section-hdr:hover { color:var(--text); }
-    .insp-section-hdr .chevron { transition:transform .2s; font-size:10px; }
-    .insp-section.open .chevron { transform:rotate(180deg); }
-    .insp-section-body { display:none; padding:10px; }
-    .insp-section.open .insp-section-body { display:block; }
-
-    /* Completeness — builder only */
-    .meter-row { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:5px; }
-    .meter-val  { font-family:var(--mono); font-size:20px; font-weight:700; }
-    .meter-gate { font-size:10px; font-weight:600; }
-    .prog-track { background:var(--surface-2); border-radius:2px; height:5px; overflow:hidden; }
-    .prog-fill  { height:100%; border-radius:2px; width:0%; background:var(--text-muted); transition:width .4s cubic-bezier(.4,0,.2,1), background .3s; }
-    .step-labels { display:flex; justify-content:space-between; margin-top:3px; }
-    .step-labels span { font-family:var(--mono); font-size:8px; color:var(--border); }
-
-    /* Slots — builder only */
-    .slot-row { padding:6px 0; border-bottom:1px solid var(--border); }
-    .slot-row:last-child { border-bottom:none; }
-    .slot-key { font-size:9px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--text-muted); margin-bottom:2px; }
-    .slot-val  { font-family:var(--mono); font-size:11px; word-break:break-word; }
-    .slot-val.empty  { color:var(--text-muted); font-style:italic; }
-    .slot-val.filled { color:var(--green); }
-    .badge { display:inline-block; font-size:9px; font-weight:700; letter-spacing:.05em; padding:2px 7px; border-radius:20px; text-transform:uppercase; }
-    .badge.confirmed { background:#1a3a1f; color:var(--green); border:1px solid #2a5a2f; }
-    .badge.pending   { background:#2e2008; color:var(--orange); border:1px solid #5a4010; }
-    .badge.inactive  { background:var(--surface-2); color:var(--text-muted); border:1px solid var(--border); }
-
-    /* SQL */
-    .sql-copy-row { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:4px; }
-    .sql-copy-row span { font-size:9px; color:var(--text-muted); }
-    .sql-action-btn {
-      background:var(--surface-2); border:1px solid var(--border);
-      border-radius:var(--r); color:var(--text-muted); font-size:10px;
-      padding:2px 8px; cursor:pointer;
-    }
-    .sql-action-btn:hover { color:var(--text); border-color:var(--accent); }
-    pre  { background:var(--bg); border:1px solid var(--border); border-radius:var(--r); padding:8px; overflow-x:auto; margin:0; }
-    code { font-family:var(--mono); font-size:10px; color:var(--sql-text); line-height:1.6; white-space:pre; }
-
-    /* Event log */
-    #debug-log { font-family:var(--mono); font-size:10px; color:var(--text-muted); display:flex; flex-direction:column; gap:2px; max-height:130px; overflow-y:auto; }
-    #debug-log::-webkit-scrollbar { width:2px; }
-    #debug-log::-webkit-scrollbar-thumb { background:var(--border); }
-    .log-entry { display:flex; gap:6px; }
-    .log-ts  { color:var(--border); flex-shrink:0; }
-    .log-in  { color:var(--accent); }
-    .log-out { color:var(--green); }
-    .log-err { color:var(--red); }
-    .log-sys { color:var(--orange); }
-
-    .replay-div { display:flex; align-items:center; gap:6px; padding:2px 0; }
-    .replay-div span { font-size:9px; color:var(--text-muted); white-space:nowrap; }
-    .replay-div::before,.replay-div::after { content:''; flex:1; height:1px; background:var(--border); }
-
-    /* ── Action buttons (approve/reject) — review only ───────────── */
-    .pub-confirm {
-      background:#2388ff; border:1px solid #3b9cff; border-radius:5px;
-      color:#fff; font-size:12px; font-weight:700;
-      padding:6px 18px; cursor:pointer; transition:background .15s;
-    }
-    .pub-confirm:hover    { background:#3b9cff; }
-    .pub-confirm:disabled { opacity:.4; cursor:default; }
-    .pub-cancel {
-      background:transparent; border:1px solid var(--border); border-radius:5px;
-      color:var(--text-dim); font-size:12px;
-      padding:6px 14px; cursor:pointer; transition:border-color .15s, color .15s;
-    }
-    .pub-cancel:hover { border-color:var(--border-hi); color:var(--text); }
-
-    /* ── Publish modal — builder only ────────────────────────────── */
-    #publish-overlay {
-      display:none; position:fixed; inset:0;
-      background:rgba(0,0,0,.65); z-index:200;
-      align-items:center; justify-content:center;
-    }
-    #publish-overlay.visible { display:flex; }
-    #publish-modal {
-      background:var(--surface); border:1px solid var(--border);
-      border-radius:8px; padding:24px 28px; width:380px;
-      display:flex; flex-direction:column; gap:14px;
-      box-shadow:0 20px 60px rgba(0,0,0,.6);
-    }
-    #publish-modal h3 { font-size:14px; font-weight:700; color:var(--text); margin:0; }
-    #publish-modal p  { font-size:11px; color:var(--text-dim); margin:0; line-height:1.5; }
-    .pub-field { display:flex; flex-direction:column; gap:5px; }
-    .pub-label { font-size:10px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--text-muted); }
-    .pub-input {
-      background:var(--surface-2); border:1px solid var(--border);
-      border-radius:5px; color:var(--text); font-family:var(--sans);
-      font-size:12px; padding:7px 10px; outline:none; transition:border-color .15s;
-    }
-    .pub-input:focus { border-color:var(--accent); }
-    .pub-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:4px; }
-    .pub-status { font-size:11px; padding:6px 10px; border-radius:4px; display:none; }
-    .pub-status.success { background:#1a3a1f; color:var(--green); border:1px solid #2a5a2f; display:block; }
-    .pub-status.error   { background:#3a1a1a; color:var(--red);   border:1px solid #5a2a2f; display:block; }
-
-    /* ── Edit Query modal — review only ─────────────────────────── */
-    .modal-overlay {
-      display:none; position:fixed; inset:0;
-      background:rgba(0,0,0,.65); z-index:500;
-      align-items:center; justify-content:center;
-    }
-    .modal-overlay.visible { display:flex; }
-    .modal {
-      width:700px; max-width:90vw;
-      background:var(--surface); border:1px solid var(--border);
-      border-radius:8px; padding:16px;
-      display:flex; flex-direction:column; gap:12px;
-      box-shadow:0 20px 60px rgba(0,0,0,.5);
-    }
-    .modal-header { display:flex; justify-content:space-between; align-items:center; }
-    .modal-header h3 { font-size:14px; margin:0; }
-    .modal-close { background:transparent; border:none; color:var(--text-muted); font-size:20px; cursor:pointer; }
-    .modal-close:hover { color:var(--red); }
-    .modal-textarea {
-      width:100%; min-height:250px; resize:vertical;
-      background:var(--surface-2); border:1px solid var(--border);
-      border-radius:var(--r); color:var(--text);
-      font-family:var(--mono); font-size:12px; padding:10px; outline:none;
-    }
-    .modal-textarea:focus { border-color:var(--accent); }
-    .modal-actions { display:flex; justify-content:flex-end; gap:8px; }
-    .modal-field { display:flex; flex-direction:column; gap:6px; }
-    .modal-label { font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--text-muted); }
-    .modal-readonly {
-      min-height:42px; background:var(--bg);
-      border:1px solid var(--border); border-radius:var(--r);
-      padding:10px; color:var(--text); font-size:12px;
-      line-height:1.5; overflow-wrap:break-word;
-    }
+    /* ── Edit Query modal ── */
+    .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:500;align-items:center;justify-content:center;}
+    .modal-overlay.visible{display:flex;}
+    .modal{width:700px;max-width:90vw;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px;display:flex;flex-direction:column;gap:12px;box-shadow:0 20px 60px rgba(0,0,0,.5);}
+    .modal-header{display:flex;justify-content:space-between;align-items:center;}
+    .modal-header h3{font-size:14px;margin:0;}
+    .modal-close{background:transparent;border:none;color:var(--text-muted);font-size:20px;cursor:pointer;}
+    .modal-close:hover{color:var(--red);}
+    .modal-textarea{width:100%;min-height:250px;resize:vertical;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r);color:var(--text);font-family:var(--mono);font-size:12px;padding:10px;outline:none;}
+    .modal-textarea:focus{border-color:var(--accent);}
+    .modal-actions{display:flex;justify-content:flex-end;gap:8px;}
+    .modal-field{display:flex;flex-direction:column;gap:6px;}
+    .modal-label{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);}
+    .modal-readonly{min-height:42px;background:var(--bg);border:1px solid var(--border);border-radius:var(--r);padding:10px;color:var(--text);font-size:12px;line-height:1.5;overflow-wrap:break-word;}
   </style>
 </head>
 <body>
 
-<!-- ── Topbar ──────────────────────────────────────────────────────── -->
+<!-- Topbar -->
 <div id="topbar">
   <span class="logo">◈ Dashboard Studio</span>
   <div class="top-sep"></div>
   <span class="session-tag" id="room-display">connecting…</span>
   <span class="mode-badge review-only">Review Mode</span>
-
   <div class="theme-switcher">
     <button class="theme-btn active" data-theme="dark">🌙</button>
     <button class="theme-btn" data-theme="light">☀️</button>
     <button class="theme-btn" data-theme="blue">🔵</button>
     <button class="theme-btn" data-theme="green">🟢</button>
   </div>
-
-  <!-- Chat toggle — builder only -->
-  <button class="tog-btn builder-only" id="tog-chat" title="Toggle chat">
-    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-      <rect x="1" y="1" width="4" height="10" rx="1" stroke="currentColor" stroke-width="1.2"/>
-      <path d="M7 4h4M7 6h3M7 8h4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
-    </svg>
+  <button class="tog-btn builder-only" id="tog-chat">
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><rect x="1" y="1" width="4" height="10" rx="1" stroke="currentColor" stroke-width="1.2"/><path d="M7 4h4M7 6h3M7 8h4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
     Chat
   </button>
-
-  <!-- Inspector toggle — always visible -->
-  <button class="tog-btn" id="tog-inspector" title="Toggle inspector">
+  <button class="tog-btn" id="tog-inspector">
     Inspector
-    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-      <rect x="7" y="1" width="4" height="10" rx="1" stroke="currentColor" stroke-width="1.2"/>
-      <path d="M5 4H1M5 6H2M5 8H1" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
-    </svg>
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><rect x="7" y="1" width="4" height="10" rx="1" stroke="currentColor" stroke-width="1.2"/><path d="M5 4H1M5 6H2M5 8H1" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
   </button>
-  <!-- Navigate to my dashboard -->
-  <button class="tog-btn" id="my-dashboard" title="My Dashboards">
-    My Dashboards
-  </button>
-  <!-- Navigate to Dashboard Spaces -->
-  <button class="tog-btn" id="dashboard-spaces" title="Spaces">
-    Spaces
-  </button>
-  <!-- Publish — builder only -->
+  <button class="tog-btn" id="my-dashboard">My Dashboards</button>
+  <button class="tog-btn" id="dashboard-spaces">Spaces</button>
   <button class="publish-btn builder-only" id="publish-btn">
     <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
     Publish
   </button>
-
   <div id="conn-wrap">
     <span id="conn-label">disconnected</span>
     <div id="conn-dot"></div>
   </div>
 </div>
 
-<!-- ── Main ───────────────────────────────────────────────────────── -->
+<!-- Main -->
 <div id="main">
-
-  <!-- Chat panel — builder only -->
   <div id="chat-panel" class="builder-only">
     <div class="panel-header"><span>Conversation</span></div>
     <div id="chat-box"></div>
@@ -499,7 +302,6 @@
     </div>
   </div>
 
-  <!-- Canvas — always visible -->
   <div id="canvas-area">
     <div id="canvas-empty">
       <div class="empty-icon">⬡</div>
@@ -508,59 +310,31 @@
     </div>
   </div>
 
-  <!-- Inspector — always visible -->
   <div id="inspector">
     <div class="panel-header"><span>Inspector</span></div>
     <div id="inspector-scroll">
-
-      <!-- Completeness + Slots — builder only -->
       <div class="insp-section open builder-only" id="sec-completeness">
-        <div class="insp-section-hdr" onclick="toggleSection('sec-completeness')">
-          <span>Completeness</span><span class="chevron">▾</span>
-        </div>
+        <div class="insp-section-hdr" onclick="toggleSection('sec-completeness')"><span>Completeness</span><span class="chevron">▾</span></div>
         <div class="insp-section-body">
-          <div class="meter-row">
-            <span class="meter-val" id="meter-val">0.0</span>
-            <span class="meter-gate" id="meter-gate"></span>
-          </div>
+          <div class="meter-row"><span class="meter-val" id="meter-val">0.0</span><span class="meter-gate" id="meter-gate"></span></div>
           <div class="prog-track"><div class="prog-fill" id="prog-fill"></div></div>
-          <div class="step-labels">
-            <span>0.0</span><span>0.3</span><span>0.5</span>
-            <span>0.7</span><span>0.9</span><span>1.0</span>
-          </div>
+          <div class="step-labels"><span>0.0</span><span>0.3</span><span>0.5</span><span>0.7</span><span>0.9</span><span>1.0</span></div>
         </div>
       </div>
-
       <div class="insp-section open builder-only" id="sec-slots">
-        <div class="insp-section-hdr" onclick="toggleSection('sec-slots')">
-          <span>Collected Slots</span><span class="chevron">▾</span>
-        </div>
+        <div class="insp-section-hdr" onclick="toggleSection('sec-slots')"><span>Collected Slots</span><span class="chevron">▾</span></div>
         <div class="insp-section-body">
-          <div class="slot-row">
-            <div class="slot-key">Widget Type</div>
-            <div class="slot-val empty" id="slot-widget">—</div>
-          </div>
-          <div class="slot-row">
-            <div class="slot-key">Query</div>
-            <div class="slot-val empty" id="slot-query">—</div>
-          </div>
-          <div class="slot-row" style="display:flex;justify-content:space-between;align-items:center;flex-direction:row;">
-            <div class="slot-key">Confirmed</div>
-            <span class="badge inactive" id="slot-confirmed">Pending</span>
-          </div>
+          <div class="slot-row"><div class="slot-key">Widget Type</div><div class="slot-val empty" id="slot-widget">—</div></div>
+          <div class="slot-row"><div class="slot-key">Query</div><div class="slot-val empty" id="slot-query">—</div></div>
+          <div class="slot-row" style="display:flex;justify-content:space-between;align-items:center;flex-direction:row;"><div class="slot-key">Confirmed</div><span class="badge inactive" id="slot-confirmed">Pending</span></div>
         </div>
       </div>
-
-      <!-- SQL — always visible -->
       <div class="insp-section" id="sec-sql">
-        <div class="insp-section-hdr" onclick="toggleSection('sec-sql')">
-          <span>Generated SQL</span><span class="chevron">▾</span>
-        </div>
+        <div class="insp-section-hdr" onclick="toggleSection('sec-sql')"><span>Generated SQL</span><span class="chevron">▾</span></div>
         <div class="insp-section-body">
           <div class="sql-copy-row">
             <span id="sql-conf-label">—</span>
             <button class="sql-action-btn" id="copy-btn">Copy</button>
-            <!-- Edit + Execute — review only -->
             <button class="sql-action-btn review-only" id="edit-query-btn">Edit</button>
             <button class="sql-action-btn review-only" id="execute-query">Execute Query</button>
           </div>
@@ -568,22 +342,12 @@
           <div id="sql-err-row" style="margin-top:6px;font-size:10px;color:var(--orange);display:none;"></div>
         </div>
       </div>
-
-      <!-- Event log — always visible -->
       <div class="insp-section open" id="sec-log">
-        <div class="insp-section-hdr" onclick="toggleSection('sec-log')">
-          <span>Event Log</span><span class="chevron">▾</span>
-        </div>
-        <div class="insp-section-body" style="padding:6px 8px;">
-          <div id="debug-log"></div>
-        </div>
+        <div class="insp-section-hdr" onclick="toggleSection('sec-log')"><span>Event Log</span><span class="chevron">▾</span></div>
+        <div class="insp-section-body" style="padding:6px 8px;"><div id="debug-log"></div></div>
       </div>
-
-      <!-- Approve / Reject — review only -->
       <div class="insp-section open review-only" id="sec-actions">
-        <div class="insp-section-hdr">
-          <span>Actions</span><span class="chevron">▾</span>
-        </div>
+        <div class="insp-section-hdr"><span>Actions</span><span class="chevron">▾</span></div>
         <div class="insp-section-body">
           <div style="display:flex;gap:8px;">
             <button id="approve-btn" class="pub-confirm" style="flex:1;">Approve</button>
@@ -591,919 +355,691 @@
           </div>
         </div>
       </div>
-
     </div>
   </div>
-</div><!-- /main -->
+</div>
 
-<!-- ── Publish modal — builder only ───────────────────────────────── -->
+<!-- Publish modal -->
 <div id="publish-overlay" class="builder-only">
   <div id="publish-modal">
     <h3>Publish Dashboard</h3>
     <p>Give this dashboard a name. All widgets currently on the canvas will be saved with their positions, sizes, queries, and data.</p>
-    <div class="pub-field">
-      <span class="pub-label">Dashboard Name</span>
-      <input id="pub-name"  class="pub-input" type="text" placeholder="e.g. Q3 Sales Overview" maxlength="80"/>
-    </div>
-    <div class="pub-field">
-      <span class="pub-label">Description (optional)</span>
-      <input id="pub-desc" class="pub-input" type="text" placeholder="Brief description…" maxlength="200"/>
-    </div>
+    <div class="pub-field"><span class="pub-label">Dashboard Name</span><input id="pub-name" class="pub-input" type="text" placeholder="e.g. Q3 Sales Overview" maxlength="80"/></div>
+    <div class="pub-field"><span class="pub-label">Description (optional)</span><input id="pub-desc" class="pub-input" type="text" placeholder="Brief description…" maxlength="200"/></div>
     <div id="pub-status" class="pub-status"></div>
-    <div class="pub-actions">
-      <button class="pub-cancel" id="pub-cancel">Cancel</button>
-      <button class="pub-confirm" id="pub-confirm">Save Dashboard</button>
-    </div>
+    <div class="pub-actions"><button class="pub-cancel" id="pub-cancel">Cancel</button><button class="pub-confirm" id="pub-confirm">Save Dashboard</button></div>
   </div>
 </div>
 
-<!-- ── Edit Query modal — review only ─────────────────────────────── -->
+<!-- Edit Query modal -->
 <div id="edit-query-overlay" class="modal-overlay review-only">
   <div class="modal">
-    <div class="modal-header">
-      <h3>Edit Query</h3>
-      <button id="edit-query-close" class="modal-close">×</button>
-    </div>
-    <div class="modal-field">
-      <label class="modal-label">User Query</label>
-      <div id="user-query-display" class="modal-readonly">No query selected</div>
-    </div>
-    <div class="modal-field">
-      <label class="modal-label">SQL Query</label>
-      <textarea id="edit-query-text" class="modal-textarea" placeholder="Enter SQL query…"></textarea>
-    </div>
-    <div class="modal-actions">
-      <button id="edit-query-cancel" class="pub-cancel">Cancel</button>
-      <button id="edit-query-save"   class="pub-confirm">Save</button>
-    </div>
+    <div class="modal-header"><h3>Edit Query</h3><button id="edit-query-close" class="modal-close">×</button></div>
+    <div class="modal-field"><label class="modal-label">User Query</label><div id="user-query-display" class="modal-readonly">No query selected</div></div>
+    <div class="modal-field"><label class="modal-label">SQL Query</label><textarea id="edit-query-text" class="modal-textarea" placeholder="Enter SQL query…"></textarea></div>
+    <div class="modal-actions"><button id="edit-query-cancel" class="pub-cancel">Cancel</button><button id="edit-query-save" class="pub-confirm">Save</button></div>
   </div>
 </div>
 
 <script>
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════
 // 1. MODE DETECTION
-// ═══════════════════════════════════════════════════════════════
-const _params   = new URLSearchParams(window.location.search);
-const _mode     = _params.get('mode') === 'review' ? 'review' : 'builder';
-const _dashId   = _params.get('dashboard') ? Number(_params.get('dashboard')) : null;
-const _source   = _params.get('type')
+// ═══════════════════════════════════════════
+const _params = new URLSearchParams(window.location.search);
+const _mode   = _params.get('mode') === 'review' ? 'review' : 'builder';
+const _dashId = _params.get('dashboard') ? Number(_params.get('dashboard')) : null;
+const _source = _params.get('type');
 document.body.classList.add('mode-' + _mode);
 
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════
 // 2. SHARED STATE
-// ═══════════════════════════════════════════════════════════════
-let widgetCounter  = 0;
-let _lastSqlQuery  = null;
+// ═══════════════════════════════════════════
+let widgetCounter = 0;
+let _lastSqlQuery = null;
 const chartInstances = {};
 const widgetRegistry = {};
 
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════
 // 3. UTILITIES
-// ═══════════════════════════════════════════════════════════════
-function escHtml(s) {
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
+// ═══════════════════════════════════════════
+function escHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
-function logEvent(dir, text) {
-  const log   = document.getElementById('debug-log');
-  const now   = new Date().toLocaleTimeString('en-GB', { hour12:false });
-  const entry = document.createElement('div');
-  entry.className = 'log-entry';
-  const ts = document.createElement('span'); ts.className = 'log-ts'; ts.textContent = now;
-  const msg= document.createElement('span'); msg.className= 'log-' + dir; msg.textContent = text;
+function logEvent(dir, text){
+  const log = document.getElementById('debug-log');
+  const now = new Date().toLocaleTimeString('en-GB',{hour12:false});
+  const entry = document.createElement('div'); entry.className='log-entry';
+  const ts = document.createElement('span'); ts.className='log-ts'; ts.textContent=now;
+  const msg= document.createElement('span'); msg.className='log-'+dir; msg.textContent=text;
   entry.appendChild(ts); entry.appendChild(msg);
-  log.appendChild(entry);
-  log.scrollTop = log.scrollHeight;
+  log.appendChild(entry); log.scrollTop=log.scrollHeight;
 }
 
-function toggleSection(id) {
-  document.getElementById(id).classList.toggle('open');
-}
+function toggleSection(id){ document.getElementById(id).classList.toggle('open'); }
 
-const myDashboard = document.getElementById('my-dashboard')
-myDashboard.addEventListener("click", () => {
-    const url = _mode === "review"
-        ? "/dashboards.html?mode=review"
-        : "/dashboards.html";
-
-    window.location.href = url;
+// Nav buttons
+document.getElementById('my-dashboard').addEventListener('click',()=>{
+  window.location.href = _mode==='review' ? '/dashboards.html?mode=review' : '/dashboards.html';
+});
+document.getElementById('dashboard-spaces').addEventListener('click',()=>{
+  window.location.href = _mode==='review' ? '/dashboards.html?type=spaces&mode=review' : '/dashboards.html?type=spaces';
 });
 
-const spaces = document.getElementById('dashboard-spaces');
-spaces.addEventListener("click", () => {
-    const url = _mode === "review"
-        ? "/dashboards.html?type=spaces&mode=review"
-        : "/dashboards.html?type=spaces";
-
-    window.location.href = url;
-});
-// ═══════════════════════════════════════════════════════════════
-// 4. CHART HELPERS (shared)
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════
+// 4. CHART HELPERS
+// ═══════════════════════════════════════════
 const PAL = ['#58a6ff','#3fb950','#d29922','#f85149','#bc8cff','#39d5ff','#ff7b72','#ffa657'];
-
 const CDEFAULTS = {
-  plugins: {
-    legend:  { labels:{ color:'#768390', font:{ size:10 } } },
-    tooltip: { backgroundColor:'#1c2330', titleColor:'#cdd9e5', bodyColor:'#768390', borderColor:'#272e38', borderWidth:1 }
+  plugins:{
+    legend:{labels:{color:'#768390',font:{size:10}}},
+    tooltip:{backgroundColor:'#1c2330',titleColor:'#cdd9e5',bodyColor:'#768390',borderColor:'#272e38',borderWidth:1}
   },
-  scales: {
-    x:{ ticks:{ color:'#768390', font:{ size:10 } }, grid:{ color:'#1c2330' } },
-    y:{ ticks:{ color:'#768390', font:{ size:10 } }, grid:{ color:'#1c2330' } }
+  scales:{
+    x:{ticks:{color:'#768390',font:{size:10}},grid:{color:'#1c2330'}},
+    y:{ticks:{color:'#768390',font:{size:10}},grid:{color:'#1c2330'}}
   }
 };
 
-function detectCols(rows) {
-  if (!rows || !rows.length) return { labelKey:null, valueKeys:[] };
-  const first = rows[0], keys = Object.keys(first);
-  let labelKey = null;
-  const valueKeys = [];
-  for (const k of keys) {
-    if (typeof first[k] === 'number' && isFinite(first[k])) valueKeys.push(k);
-    else if (!labelKey) labelKey = k;
+// Zoom/pan options injected into every chart
+const ZOOM_OPTS = {
+  zoom:{
+    wheel:{enabled:true,speed:0.1},
+    pinch:{enabled:true},
+    mode:'xy',
+  },
+  pan:{
+    enabled:true,
+    mode:'xy',
+  },
+  limits:{x:{minRange:1},y:{minRange:1}},
+};
+
+function detectCols(rows){
+  if(!rows||!rows.length) return{labelKey:null,valueKeys:[]};
+  const first=rows[0],keys=Object.keys(first);
+  let labelKey=null; const valueKeys=[];
+  for(const k of keys){
+    if(typeof first[k]==='number'&&isFinite(first[k])) valueKeys.push(k);
+    else if(!labelKey) labelKey=k;
   }
-  if (!labelKey && valueKeys.length) labelKey = '_idx';
-  return { labelKey, valueKeys };
+  if(!labelKey&&valueKeys.length) labelKey='_idx';
+  return{labelKey,valueKeys};
+}
+function getLabels(rows,lk){ return lk==='_idx'?rows.map((_,i)=>String(i+1)):rows.map(r=>String(r[lk]??'')); }
+function fmtNum(n){
+  if(Math.abs(n)>=1e6) return(n/1e6).toFixed(1)+'M';
+  if(Math.abs(n)>=1e3) return(n/1e3).toFixed(1)+'K';
+  return Number.isInteger(n)?String(n):n.toFixed(2);
 }
 
-function getLabels(rows, lk) {
-  return lk === '_idx' ? rows.map((_,i)=>String(i+1)) : rows.map(r=>String(r[lk]??''));
-}
-
-function fmtNum(n) {
-  if (Math.abs(n)>=1e6) return (n/1e6).toFixed(1)+'M';
-  if (Math.abs(n)>=1e3) return (n/1e3).toFixed(1)+'K';
-  return Number.isInteger(n) ? String(n) : n.toFixed(2);
-}
-
-function buildChartCfg(type, rows, stacked) {
-  const { labelKey, valueKeys } = detectCols(rows);
-  if (!rows.length || !valueKeys.length) return null;
-  const labels   = getLabels(rows, labelKey);
-  const datasets = valueKeys.map((k,i) => ({
-    label:           k.replace(/_/g,' '),
-    data:            rows.map(r=>r[k]??0),
-    backgroundColor: PAL[i%PAL.length]+'cc',
-    borderColor:     PAL[i%PAL.length],
-    borderWidth:1, borderRadius:2, tension:0.3,
-    fill:            type==='line' && valueKeys.length===1,
-    pointRadius:     type==='line' && rows.length>40 ? 0 : 3,
+function buildChartCfg(type,rows,stacked){
+  const{labelKey,valueKeys}=detectCols(rows);
+  if(!rows.length||!valueKeys.length) return null;
+  const labels=getLabels(rows,labelKey);
+  const datasets=valueKeys.map((k,i)=>({
+    label:k.replace(/_/g,' '),
+    data:rows.map(r=>r[k]??0),
+    backgroundColor:PAL[i%PAL.length]+'cc',
+    borderColor:PAL[i%PAL.length],
+    borderWidth:1,borderRadius:2,tension:0.3,
+    fill:type==='line'&&valueKeys.length===1,
+    pointRadius:type==='line'&&rows.length>40?0:3,
   }));
-  return {
-    type, data:{ labels, datasets },
+  return{
+    type,data:{labels,datasets},
     options:{
-      responsive:true, maintainAspectRatio:false, animation:{ duration:400 },
-      plugins:{ ...CDEFAULTS.plugins },
-      scales: type==='doughnut' ? undefined : {
-        x:{ ...CDEFAULTS.scales.x, stacked },
-        y:{ ...CDEFAULTS.scales.y, stacked },
+      responsive:true,maintainAspectRatio:false,animation:{duration:400},
+      plugins:{...CDEFAULTS.plugins,zoom:ZOOM_OPTS},
+      scales:type==='doughnut'?undefined:{
+        x:{...CDEFAULTS.scales.x,stacked},
+        y:{...CDEFAULTS.scales.y,stacked},
       }
     }
   };
 }
 
-function buildPieCfg(rows) {
-  const { labelKey, valueKeys } = detectCols(rows);
-  if (!rows.length || !valueKeys.length) return null;
-  const labels = getLabels(rows, labelKey);
-  const values = rows.map(r=>r[valueKeys[0]]??0);
-  return {
+function buildPieCfg(rows){
+  const{labelKey,valueKeys}=detectCols(rows);
+  if(!rows.length||!valueKeys.length) return null;
+  const labels=getLabels(rows,labelKey);
+  const values=rows.map(r=>r[valueKeys[0]]??0);
+  return{
     type:'doughnut',
-    data:{ labels, datasets:[{ data:values,
-      backgroundColor: labels.map((_,i)=>PAL[i%PAL.length]+'cc'),
-      borderColor:     labels.map((_,i)=>PAL[i%PAL.length]),
-      borderWidth:1 }] },
-    options:{ responsive:true, maintainAspectRatio:false, animation:{duration:400}, plugins:CDEFAULTS.plugins }
+    data:{labels,datasets:[{data:values,
+      backgroundColor:labels.map((_,i)=>PAL[i%PAL.length]+'cc'),
+      borderColor:labels.map((_,i)=>PAL[i%PAL.length]),
+      borderWidth:1}]},
+    options:{
+      responsive:true,maintainAspectRatio:false,animation:{duration:400},
+      // pie/doughnut: zoom enabled but no scales
+      plugins:{...CDEFAULTS.plugins,zoom:{zoom:{wheel:{enabled:true,speed:0.1},pinch:{enabled:true},mode:'xy'},pan:{enabled:true,mode:'xy'}}}
+    }
   };
 }
 
-function chartCfgForType(wt, result) {
-  if      (wt==='BARCHART')   return buildChartCfg('bar',  result, false);
-  else if (wt==='STACKEDBAR') return buildChartCfg('bar',  result, true);
-  else if (wt==='LINECHART')  return buildChartCfg('line', result, false);
-  else if (wt==='PIECHART')   return buildPieCfg(result);
-  else                        return buildChartCfg('bar',  result, false);
+function chartCfgForType(wt,result){
+  if(wt==='BARCHART')   return buildChartCfg('bar',result,false);
+  if(wt==='STACKEDBAR') return buildChartCfg('bar',result,true);
+  if(wt==='LINECHART')  return buildChartCfg('line',result,false);
+  if(wt==='PIECHART')   return buildPieCfg(result);
+  return buildChartCfg('bar',result,false);
 }
 
-// ═══════════════════════════════════════════════════════════════
-// 5. CANVAS: DRAG (builder only)
-// ═══════════════════════════════════════════════════════════════
-let activeWidget = null, dragOffX = 0, dragOffY = 0;
+// ── TABLE renderer ──────────────────────────────────────────
+function buildTableEl(rows){
+  if(!rows||!rows.length) return null;
+  const keys=Object.keys(rows[0]);
+  const wrap=document.createElement('div'); wrap.className='table-wrap';
+  const tbl=document.createElement('table'); tbl.className='data-table';
+  // thead
+  const thead=document.createElement('thead');
+  const hrow=document.createElement('tr');
+  keys.forEach(k=>{
+    const th=document.createElement('th'); th.textContent=k.replace(/_/g,' '); hrow.appendChild(th);
+  });
+  thead.appendChild(hrow); tbl.appendChild(thead);
+  // tbody
+  const tbody=document.createElement('tbody');
+  rows.forEach(r=>{
+    const tr=document.createElement('tr');
+    keys.forEach(k=>{
+      const td=document.createElement('td');
+      const v=r[k];
+      if(typeof v==='number'&&isFinite(v)){ td.className='num'; td.textContent=fmtNum(v); }
+      else td.textContent=v??'—';
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+  tbl.appendChild(tbody);
+  wrap.appendChild(tbl);
+  return wrap;
+}
 
-document.addEventListener('mousemove', e => {
-  if (!activeWidget) return;
-  const ca  = document.getElementById('canvas-area');
-  const box = ca.getBoundingClientRect();
-  let x = Math.max(0, Math.min(e.clientX - box.left - dragOffX, box.width  - activeWidget.offsetWidth));
-  let y = Math.max(0, Math.min(e.clientY - box.top  - dragOffY, box.height - activeWidget.offsetHeight));
-  activeWidget.style.left = x + 'px';
-  activeWidget.style.top  = y + 'px';
-});
-document.addEventListener('mouseup', () => {
-  if (activeWidget) { activeWidget.classList.remove('active'); activeWidget = null; }
-});
+// chat-inline table (compact)
+function buildChatTableEl(rows){
+  if(!rows||!rows.length) return null;
+  const outer=document.createElement('div'); outer.className='chat-table-wrap';
+  const el=buildTableEl(rows);
+  if(el) outer.appendChild(el);
+  return outer;
+}
 
-function makeWidgetDraggable(el) {
-  if (_mode !== 'builder') return;
-  const hdr = el.querySelector('.cw-header');
-  hdr.addEventListener('mousedown', e => {
+// ═══════════════════════════════════════════
+// 5. DRAG (builder only)
+// ═══════════════════════════════════════════
+let activeWidget=null,dragOffX=0,dragOffY=0;
+document.addEventListener('mousemove',e=>{
+  if(!activeWidget) return;
+  const ca=document.getElementById('canvas-area'),box=ca.getBoundingClientRect();
+  let x=Math.max(0,Math.min(e.clientX-box.left-dragOffX,box.width-activeWidget.offsetWidth));
+  let y=Math.max(0,Math.min(e.clientY-box.top-dragOffY,box.height-activeWidget.offsetHeight));
+  activeWidget.style.left=x+'px'; activeWidget.style.top=y+'px';
+});
+document.addEventListener('mouseup',()=>{
+  if(activeWidget){activeWidget.classList.remove('active');activeWidget=null;}
+});
+function makeWidgetDraggable(el){
+  if(_mode!=='builder') return;
+  el.querySelector('.cw-header').addEventListener('mousedown',e=>{
     e.preventDefault();
-    activeWidget = el;
-    el.classList.add('active');
-    el.style.zIndex = ++widgetCounter + 10;
-    const rect = el.getBoundingClientRect();
-    dragOffX = e.clientX - rect.left;
-    dragOffY = e.clientY - rect.top;
+    activeWidget=el; el.classList.add('active');
+    el.style.zIndex=++widgetCounter+10;
+    const rect=el.getBoundingClientRect();
+    dragOffX=e.clientX-rect.left; dragOffY=e.clientY-rect.top;
   });
 }
 
-// ═══════════════════════════════════════════════════════════════
-// 6. WIDGET FACTORY (shared by addToCanvas + restoreWidget)
-// ═══════════════════════════════════════════════════════════════
-function buildWidgetEl({ id, wt, title, result, query, sqlQuery, x, y, width, height, zIndex, status }) {
-  const ca = document.getElementById('canvas-area');
-  if (document.getElementById(id)) return null;   // duplicate guard
-  // Convert status to emoji
-  const status_em = status === "APPROVED"? "✅" : status==="REJECTED"? "❌" : "🆕";
-  const widget = document.createElement('div');
-  widget.className = 'canvas-widget';
-  widget.id        = id;
-  widget.style.left    = (x      || 40)  + 'px';
-  widget.style.top     = (y      || 40)  + 'px';
-  widget.style.width   = (width  || (wt==='KPI' ? 200 : 380)) + 'px';
-  widget.style.height  = (height || (wt==='KPI' ? 140 : 240)) + 'px';
-  if (zIndex) widget.style.zIndex = zIndex;
+// ═══════════════════════════════════════════
+// 6. WIDGET FACTORY
+// ═══════════════════════════════════════════
+function buildWidgetEl({id,wt,title,result,query,sqlQuery,x,y,width,height,zIndex,status}){
+  const ca=document.getElementById('canvas-area');
+  if(document.getElementById(id)) return null;
+
+  const status_em = status==='APPROVED'?'✅':status==='REJECTED'?'❌':'🆕';
+  const isTable   = wt==='TABLE';
+
+  const widget=document.createElement('div');
+  widget.className='canvas-widget'; widget.id=id;
+  widget.style.left  =(x||40)+'px';
+  widget.style.top   =(y||40)+'px';
+  widget.style.width =(width||(wt==='KPI'?200:isTable?480:380))+'px';
+  widget.style.height=(height||(wt==='KPI'?140:isTable?280:240))+'px';
+  if(zIndex) widget.style.zIndex=zIndex;
 
   // Header
-  const hdr = document.createElement('div');
-  hdr.className = 'cw-header';
-  hdr.innerHTML =
-    `<span class="cw-type-badge">${escHtml(wt)}</span>` +
-    `<span class="cw-title">${escHtml(title || query || wt)} - ${status_em || "🆕"}</span>`;
-  const closeBtn = document.createElement('button');
-  closeBtn.className = 'cw-close';
-  closeBtn.textContent = '×';
-  closeBtn.addEventListener('click', async () => {
-    if (chartInstances[id]) { chartInstances[id].destroy(); delete chartInstances[id]; }
-    delete widgetRegistry[id];
-    widget.remove();
-    if (!ca.querySelector('.canvas-widget')) document.getElementById('canvas-empty').style.opacity = '1';
-    // Delete from widget table
-    const res_widget = await fetch(`/dashboards/${_dashId}/widgets/${id}`, {
-      method:"DELETE", headers:{'Content-Type':'application/json'}
-    })
+  const hdr=document.createElement('div'); hdr.className='cw-header';
+  hdr.innerHTML=`<span class="cw-type-badge">${escHtml(wt)}</span><span class="cw-title">${escHtml(title||query||wt)} — ${status_em}</span>`;
+  const closeBtn=document.createElement('button'); closeBtn.className='cw-close'; closeBtn.textContent='×';
+  closeBtn.addEventListener('click',async()=>{
+    if(chartInstances[id]){chartInstances[id].destroy();delete chartInstances[id];}
+    delete widgetRegistry[id]; widget.remove();
+    if(!ca.querySelector('.canvas-widget')) document.getElementById('canvas-empty').style.opacity='1';
+    if(_dashId) await fetch(`/dashboards/${_dashId}/widgets/${id}`,{method:'DELETE',headers:{'Content-Type':'application/json'}});
   });
-  hdr.appendChild(closeBtn);
-  widget.appendChild(hdr);
+  hdr.appendChild(closeBtn); widget.appendChild(hdr);
 
   // Body
-  const body = document.createElement('div');
-  body.className = 'cw-body';
+  const body=document.createElement('div'); body.className='cw-body';
 
-  if (wt === 'KPI') {
-    const { valueKeys } = detectCols(result);
-    const pk  = valueKeys[0] || (result[0] ? Object.keys(result[0])[0] : null);
-    const val = pk && result[0] ? result[0][pk] : '—';
-    const extras = [];
-    if (result.length > 1) {
-      result.slice(0,5).forEach(r => {
-        const lk = Object.keys(r).find(k => typeof r[k] !== 'number') || pk;
-        if (pk) extras.push(`${r[lk]}: ${fmtNum(r[pk])}`);
-      });
-    }
-    const kpiDiv = document.createElement('div');
-    kpiDiv.className = 'kpi-canvas';
-    kpiDiv.innerHTML =
-      `<div class="kv">${typeof val==='number' ? fmtNum(val) : val}</div>` +
-      (pk ? `<div class="kl">${pk.replace(/_/g,' ')}</div>` : '') +
-      (extras.length ? `<div class="ks">${extras.join('  ·  ')}</div>` : '');
+  if(wt==='KPI'){
+    const{valueKeys}=detectCols(result);
+    const pk=valueKeys[0]||(result[0]?Object.keys(result[0])[0]:null);
+    const val=pk&&result[0]?result[0][pk]:'—';
+    const extras=[];
+    if(result.length>1) result.slice(0,5).forEach(r=>{
+      const lk=Object.keys(r).find(k=>typeof r[k]!=='number')||pk;
+      if(pk) extras.push(`${r[lk]}: ${fmtNum(r[pk])}`);
+    });
+    const kpiDiv=document.createElement('div'); kpiDiv.className='kpi-canvas';
+    kpiDiv.innerHTML=`<div class="kv">${typeof val==='number'?fmtNum(val):val}</div>`+
+      (pk?`<div class="kl">${pk.replace(/_/g,' ')}</div>`:'')+
+      (extras.length?`<div class="ks">${extras.join('  ·  ')}</div>`:'');
     body.appendChild(kpiDiv);
-  } else if (result && result.length) {
-    const cfg = chartCfgForType(wt, result);
-    if (cfg) {
-      cfg.options.animation = { duration:500 };
-      const canvas = document.createElement('canvas');
-      body.appendChild(canvas);
-      requestAnimationFrame(() => { chartInstances[id] = new Chart(canvas, cfg); });
+
+  } else if(isTable){
+    // TABLE widget — scrollable, no zoom plugin needed
+    const tableEl=buildTableEl(result);
+    if(tableEl) body.appendChild(tableEl);
+    else{ const ph=document.createElement('div'); ph.style.cssText='font-size:11px;color:var(--text-muted);text-align:center;'; ph.textContent=query||'No data'; body.appendChild(ph); }
+    if(result&&result.length){
+      const meta=document.createElement('div'); meta.className='table-meta';
+      meta.textContent=`${result.length} row${result.length!==1?'s':''} · ${Object.keys(result[0]).length} col${Object.keys(result[0]).length!==1?'s':''}`;
+      widget.appendChild(meta);
+    }
+
+  } else if(result&&result.length){
+    const cfg=chartCfgForType(wt,result);
+    if(cfg){
+      cfg.options.animation={duration:500};
+      const canvas=document.createElement('canvas'); body.appendChild(canvas);
+
+      // Reset-zoom button
+      const resetBtn=document.createElement('button'); resetBtn.className='zoom-reset-btn'; resetBtn.textContent='↺ Reset zoom';
+      resetBtn.addEventListener('click',e=>{e.stopPropagation();if(chartInstances[id]) chartInstances[id].resetZoom();});
+      body.appendChild(resetBtn);
+
+      // Zoom hint
+      const hint=document.createElement('div'); hint.className='zoom-hint'; hint.textContent='Scroll to zoom · Drag to pan';
+      body.appendChild(hint);
+
+      requestAnimationFrame(()=>{ chartInstances[id]=new Chart(canvas,cfg); });
     }
   } else {
-    const ph = document.createElement('div');
-    ph.style.cssText = 'font-size:11px;color:var(--text-muted);text-align:center;padding:8px;';
-    ph.textContent = query || 'No data';
-    body.appendChild(ph);
+    const ph=document.createElement('div'); ph.style.cssText='font-size:11px;color:var(--text-muted);text-align:center;padding:8px;'; ph.textContent=query||'No data'; body.appendChild(ph);
   }
 
   widget.appendChild(body);
   ca.appendChild(widget);
   makeWidgetDraggable(widget);
+  widgetRegistry[id]={uid:id,widgetType:wt,query:query||null,sqlQuery:sqlQuery||null,result:result||[]};
 
-  // Register metadata
-  widgetRegistry[id] = { uid:id, widgetType:wt, query:query||null, sqlQuery:sqlQuery||null, result:result||[] };
-
-  // ResizeObserver for chart widgets
-  if (wt !== 'KPI') {
-    const ro = new ResizeObserver(() => { if (chartInstances[id]) chartInstances[id].resize(); });
+  if(!isTable&&wt!=='KPI'){
+    const ro=new ResizeObserver(()=>{if(chartInstances[id]) chartInstances[id].resize();});
     ro.observe(widget);
   }
 
-  // Click → populate SQL inspector (all modes)
-  widget.addEventListener('click', () => {
-    document.querySelectorAll('.canvas-widget.selected').forEach(w => w.classList.remove('selected'));
+  widget.addEventListener('click',()=>{
+    document.querySelectorAll('.canvas-widget.selected').forEach(w=>w.classList.remove('selected'));
     widget.classList.add('selected');
-    const meta = widgetRegistry[id];
-    if (!meta) return;
-    document.getElementById('sql-code').textContent = meta.sqlQuery || '-- No SQL available';
-    document.getElementById('sql-conf-label').textContent = meta.widgetType || '';
+    const meta=widgetRegistry[id]; if(!meta) return;
+    document.getElementById('sql-code').textContent=meta.sqlQuery||'-- No SQL available';
+    document.getElementById('sql-conf-label').textContent=meta.widgetType||'';
     document.getElementById('sec-sql').classList.add('open');
   });
-
   return widget;
 }
 
-// ═══════════════════════════════════════════════════════════════
-// 7. ADD TO CANVAS (builder: from chat bubble)
-// ═══════════════════════════════════════════════════════════════
-function addToCanvas(widgetType, result, query, sqlQuery) {
-  const wt = (widgetType||'CHART').toUpperCase();
-  const id = 'cw-' + (++widgetCounter);
-  const off = 40 + ((widgetCounter - 1) % 5) * 20;
-  document.getElementById('canvas-empty').style.opacity = '0';
-  buildWidgetEl({ id, wt, title:query, result, query, sqlQuery, x:off, y:off });
-  logEvent('out', `Widget placed on canvas: ${wt}`);
+// ═══════════════════════════════════════════
+// 7. ADD TO CANVAS
+// ═══════════════════════════════════════════
+function addToCanvas(widgetType,result,query,sqlQuery){
+  const wt=(widgetType||'CHART').toUpperCase();
+  const id='cw-'+(++widgetCounter);
+  const off=40+((widgetCounter-1)%5)*20;
+  document.getElementById('canvas-empty').style.opacity='0';
+  buildWidgetEl({id,wt,title:query,result,query,sqlQuery,x:off,y:off});
+  logEvent('out','Widget placed on canvas: '+wt);
 }
 
-// ═══════════════════════════════════════════════════════════════
-// 8. RESTORE DASHBOARD (shared)
-// ═══════════════════════════════════════════════════════════════
-async function restoreDashboard(dashboardId) {
-  try {
-    logEvent('sys', `Loading dashboard ${dashboardId}…`);
-    const res = await fetch(`/dashboards/${dashboardId}`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const dash = await res.json();
-
-    if (!dash.widgets || !dash.widgets.length) { logEvent('sys', 'Dashboard has no widgets.'); return; }
-
-    document.getElementById('room-display').textContent = dash.name || `Dashboard ${dashboardId}`;
-
-    const sorted = [...dash.widgets].sort((a,b) => (a.z_index||1) - (b.z_index||1));
-    for (const w of sorted) {
-      let result = w.result_json || [];
-      if (typeof result === 'string') { try { result = JSON.parse(result); } catch { result = []; } }
+// ═══════════════════════════════════════════
+// 8. RESTORE DASHBOARD
+// ═══════════════════════════════════════════
+async function restoreDashboard(dashboardId){
+  try{
+    logEvent('sys',`Loading dashboard ${dashboardId}…`);
+    const res=await fetch(`/dashboards/${dashboardId}`);
+    if(!res.ok) throw new Error(`HTTP ${res.status}`);
+    const dash=await res.json();
+    if(!dash.widgets||!dash.widgets.length){logEvent('sys','Dashboard has no widgets.');return;}
+    document.getElementById('room-display').textContent=dash.name||`Dashboard ${dashboardId}`;
+    const sorted=[...dash.widgets].sort((a,b)=>(a.z_index||1)-(b.z_index||1));
+    for(const w of sorted){
+      let result=w.result_json||[];
+      if(typeof result==='string'){try{result=JSON.parse(result);}catch{result=[];}}
       widgetCounter++;
       buildWidgetEl({
-        id:       w.widget_uid || ('cw-restore-' + w.id),
-        wt:       (w.widget_type || 'BARCHART').toUpperCase(),
-        title:    w.title || w.query || null,
+        id:w.widget_uid||('cw-restore-'+w.id),
+        wt:(w.widget_type||'BARCHART').toUpperCase(),
+        title:w.title||w.query||null,
         result,
-        query:    w.query     || null,
-        sqlQuery: w.sql_query || null,
-        x:        w.x      || 40,
-        y:        w.y      || 40,
-        width:    w.width  || 380,
-        height:   w.height || 240,
-        zIndex:   (w.z_index || widgetCounter) + 10,
-        status:   w.status
+        query:w.query||null,
+        sqlQuery:w.sql_query||null,
+        x:w.x||40,y:w.y||40,width:w.width||380,height:w.height||240,
+        zIndex:(w.z_index||widgetCounter)+10,
+        status:w.status,
       });
     }
-    document.getElementById('canvas-empty').style.opacity = '0';
-    logEvent('sys', `Restored ${sorted.length} widget(s) from "${dash.name}"`);
-  } catch (err) {
-    logEvent('err', 'Restore failed: ' + err.message);
-  }
+    document.getElementById('canvas-empty').style.opacity='0';
+    logEvent('sys',`Restored ${sorted.length} widget(s) from "${dash.name}"`);
+  }catch(err){logEvent('err','Restore failed: '+err.message);}
 }
 
-// ═══════════════════════════════════════════════════════════════
-// 9. INSPECTOR: state update (builder)
-// ═══════════════════════════════════════════════════════════════
-function updateState(s) {
-  if (!s) return;
-  const pct  = s.completeness || 0;
-  const fill = document.getElementById('prog-fill');
-  const gate = document.getElementById('meter-gate');
-  document.getElementById('meter-val').textContent = pct.toFixed(1);
-  fill.style.width = (pct * 100).toFixed(0) + '%';
-  if (pct >= 0.9) {
-    fill.style.background = 'var(--green)'; gate.textContent = '✓ confirmed'; gate.style.color = 'var(--green)';
-  } else if (pct > 0.5) {
-    fill.style.background = 'var(--orange)'; gate.textContent = 'needs > 0.80'; gate.style.color = 'var(--orange)';
-  } else {
-    fill.style.background = 'var(--text-muted)'; gate.textContent = '';
-  }
-
-  const wEl = document.getElementById('slot-widget');
-  wEl.textContent = s.widget || '—'; wEl.className = 'slot-val ' + (s.widget ? 'filled' : 'empty');
-
-  const qEl = document.getElementById('slot-query');
-  qEl.textContent = s.query || '—'; qEl.className = 'slot-val ' + (s.query ? 'filled' : 'empty');
-
-  const cEl = document.getElementById('slot-confirmed');
-  if (s.confirmed)            { cEl.textContent = 'Confirmed'; cEl.className = 'badge confirmed'; }
-  else if (s.widget||s.query) { cEl.textContent = 'Waiting';   cEl.className = 'badge pending';   }
-  else                        { cEl.textContent = 'Pending';   cEl.className = 'badge inactive';  }
-
-  if (s.sql && !s.sql.startsWith('--') && !s.sql.startsWith('INSUFFICIENT')) {
-    _lastSqlQuery = s.sql;
-    document.getElementById('sql-code').textContent = s.sql;
-    document.getElementById('sql-conf-label').textContent = s.sql_confidence != null
-      ? `conf ${(s.sql_confidence*100).toFixed(0)}%` : 'ready';
+// ═══════════════════════════════════════════
+// 9. STATE UPDATE (builder)
+// ═══════════════════════════════════════════
+function updateState(s){
+  if(!s) return;
+  const pct=s.completeness||0;
+  const fill=document.getElementById('prog-fill'),gate=document.getElementById('meter-gate');
+  document.getElementById('meter-val').textContent=pct.toFixed(1);
+  fill.style.width=(pct*100).toFixed(0)+'%';
+  if(pct>=0.9){fill.style.background='var(--green)';gate.textContent='✓ confirmed';gate.style.color='var(--green)';}
+  else if(pct>0.5){fill.style.background='var(--orange)';gate.textContent='needs > 0.80';gate.style.color='var(--orange)';}
+  else{fill.style.background='var(--text-muted)';gate.textContent='';}
+  const wEl=document.getElementById('slot-widget');
+  wEl.textContent=s.widget||'—';wEl.className='slot-val '+(s.widget?'filled':'empty');
+  const qEl=document.getElementById('slot-query');
+  qEl.textContent=s.query||'—';qEl.className='slot-val '+(s.query?'filled':'empty');
+  const cEl=document.getElementById('slot-confirmed');
+  if(s.confirmed){cEl.textContent='Confirmed';cEl.className='badge confirmed';}
+  else if(s.widget||s.query){cEl.textContent='Waiting';cEl.className='badge pending';}
+  else{cEl.textContent='Pending';cEl.className='badge inactive';}
+  if(s.sql&&!s.sql.startsWith('--')&&!s.sql.startsWith('INSUFFICIENT')){
+    _lastSqlQuery=s.sql;
+    document.getElementById('sql-code').textContent=s.sql;
+    document.getElementById('sql-conf-label').textContent=s.sql_confidence!=null?`conf ${(s.sql_confidence*100).toFixed(0)}%`:'ready';
     document.getElementById('sec-sql').classList.add('open');
-    if (s.sql_data_errors) {
-      const errRow = document.getElementById('sql-err-row');
-      errRow.textContent = '⚠ ' + s.sql_data_errors; errRow.style.display = 'block';
-    }
-    logEvent('out', 'SQL ready' + (s.sql_confidence ? ` (${(s.sql_confidence*100).toFixed(0)}% conf)` : ''));
-    if (s.sql_data_errors) logEvent('err', s.sql_data_errors);
+    if(s.sql_data_errors){const e=document.getElementById('sql-err-row');e.textContent='⚠ '+s.sql_data_errors;e.style.display='block';}
+    logEvent('out','SQL ready'+(s.sql_confidence?` (${(s.sql_confidence*100).toFixed(0)}% conf)`:''));
+    if(s.sql_data_errors) logEvent('err',s.sql_data_errors);
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════
 // 10. THEME
-// ═══════════════════════════════════════════════════════════════
-const themes = {
-  dark:  { '--bg':'#0b0f14','--canvas-bg':'#0d1117','--surface':'#161b22','--surface-2':'#1c2330','--border':'#272e38','--text':'#cdd9e5','--text-dim':'#768390','--text-muted':'#4d5768','--accent':'#58a6ff','--accent-dim':'#1c3354' },
-  light: { '--bg':'#f3f4f6','--canvas-bg':'#ffffff','--surface':'#ffffff','--surface-2':'#f1f5f9','--border':'#d1d5db','--text':'#111827','--text-dim':'#6b7280','--text-muted':'#9ca3af','--accent':'#2563eb','--accent-dim':'#dbeafe' },
-  blue:  { '--bg':'#0f172a','--canvas-bg':'#172554','--surface':'#1e293b','--surface-2':'#334155','--border':'#475569','--text':'#e2e8f0','--text-dim':'#94a3b8','--text-muted':'#64748b','--accent':'#3b82f6','--accent-dim':'#1c3354' },
-  green: { '--bg':'#07140c','--canvas-bg':'#0c1f12','--surface':'#102516','--surface-2':'#16321f','--border':'#245032','--text':'#d8ffe5','--text-dim':'#8ab89a','--text-muted':'#4a7a5a','--accent':'#3fb950','--accent-dim':'#1c3354' },
+// ═══════════════════════════════════════════
+const themes={
+  dark:{'--bg':'#0b0f14','--canvas-bg':'#0d1117','--surface':'#161b22','--surface-2':'#1c2330','--border':'#272e38','--text':'#cdd9e5','--text-dim':'#768390','--text-muted':'#4d5768','--accent':'#58a6ff','--accent-dim':'#1c3354'},
+  light:{'--bg':'#f3f4f6','--canvas-bg':'#ffffff','--surface':'#ffffff','--surface-2':'#f1f5f9','--border':'#d1d5db','--text':'#111827','--text-dim':'#6b7280','--text-muted':'#9ca3af','--accent':'#2563eb','--accent-dim':'#dbeafe'},
+  blue:{'--bg':'#0f172a','--canvas-bg':'#172554','--surface':'#1e293b','--surface-2':'#334155','--border':'#475569','--text':'#e2e8f0','--text-dim':'#94a3b8','--text-muted':'#64748b','--accent':'#3b82f6','--accent-dim':'#1c3354'},
+  green:{'--bg':'#07140c','--canvas-bg':'#0c1f12','--surface':'#102516','--surface-2':'#16321f','--border':'#245032','--text':'#d8ffe5','--text-dim':'#8ab89a','--text-muted':'#4a7a5a','--accent':'#3fb950','--accent-dim':'#1c3354'},
 };
-function applyTheme(name) {
-  const t = themes[name] || themes.dark;
-  Object.entries(t).forEach(([k,v]) => document.documentElement.style.setProperty(k, v));
-  localStorage.setItem('ds-theme', name);
-  document.querySelectorAll('.theme-btn').forEach(b => b.classList.toggle('active', b.dataset.theme === name));
+function applyTheme(name){
+  const t=themes[name]||themes.dark;
+  Object.entries(t).forEach(([k,v])=>document.documentElement.style.setProperty(k,v));
+  localStorage.setItem('ds-theme',name);
+  document.querySelectorAll('.theme-btn').forEach(b=>b.classList.toggle('active',b.dataset.theme===name));
 }
-document.querySelectorAll('.theme-btn').forEach(btn => btn.addEventListener('click', () => applyTheme(btn.dataset.theme)));
-applyTheme(localStorage.getItem('ds-theme') || 'dark');
+document.querySelectorAll('.theme-btn').forEach(btn=>btn.addEventListener('click',()=>applyTheme(btn.dataset.theme)));
+applyTheme(localStorage.getItem('ds-theme')||'dark');
 
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════
 // 11. PANEL TOGGLES
-// ═══════════════════════════════════════════════════════════════
-const togChat = document.getElementById('tog-chat');
-const togInspector = document.getElementById('tog-inspector');
+// ═══════════════════════════════════════════
+const togChat=document.getElementById('tog-chat');
+const togInspector=document.getElementById('tog-inspector');
+const chatPanel=document.getElementById('chat-panel');
+const inspector=document.getElementById('inspector');
 
-
-const chatPanel = document.getElementById("chat-panel");
-const inspector = document.getElementById("inspector");
-
-if (_source === "spaces") {
-    togChat.style.display = "none";
-    togInspector.style.display = "none";
-
-    chatPanel.classList.add("collapsed");
-    inspector.classList.add("collapsed");
+if(_source==='spaces'){
+  if(togChat) togChat.style.display='none';
+  togInspector.style.display='none';
+  chatPanel.classList.add('collapsed');
+  inspector.classList.add('collapsed');
 }
-
-if (_mode === "builder") {
-    togInspector.style.display = "none";
-
-    inspector.classList.add("collapsed");
-    // or use inspector.style.display = "none" if you never want it shown
+if(_mode==='builder'){
+  togInspector.style.display='none';
+  inspector.classList.add('collapsed');
 }
+if(togChat) togChat.addEventListener('click',()=>chatPanel.classList.toggle('collapsed'));
+togInspector.addEventListener('click',()=>inspector.classList.toggle('collapsed'));
 
-if (togChat) {
-    togChat.addEventListener("click", () => {
-        chatPanel.classList.toggle("collapsed");
-    });
-}
-
-if (togInspector) {
-    togInspector.addEventListener("click", () => {
-        inspector.classList.toggle("collapsed");
-    });
-}
-
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════
 // 12. COPY SQL
-// ═══════════════════════════════════════════════════════════════
-document.getElementById('copy-btn').addEventListener('click', function() {
-  navigator.clipboard.writeText(document.getElementById('sql-code').textContent).then(() => {
-    this.textContent = 'Copied!';
-    setTimeout(() => { this.textContent = 'Copy'; }, 1800);
+// ═══════════════════════════════════════════
+document.getElementById('copy-btn').addEventListener('click',function(){
+  navigator.clipboard.writeText(document.getElementById('sql-code').textContent).then(()=>{
+    this.textContent='Copied!'; setTimeout(()=>{this.textContent='Copy';},1800);
   });
 });
 
-// ═══════════════════════════════════════════════════════════════
-// 13. BUILDER MODE: WebSocket + chat bubbles + inline charts
-// ═══════════════════════════════════════════════════════════════
-if (_mode === 'builder') {
-  const chatId = (() => {
-    let id = sessionStorage.getItem('dashboardChatId');
-    if (!id) { id = 'session_' + Math.random().toString(36).substring(2,9); sessionStorage.setItem('dashboardChatId', id); }
+// ═══════════════════════════════════════════
+// 13. BUILDER MODE
+// ═══════════════════════════════════════════
+if(_mode==='builder'){
+  const chatId=(()=>{
+    let id=sessionStorage.getItem('dashboardChatId');
+    if(!id){id='session_'+Math.random().toString(36).substring(2,9);sessionStorage.setItem('dashboardChatId',id);}
     return id;
   })();
-  document.getElementById('room-display').textContent = chatId;
+  document.getElementById('room-display').textContent=chatId;
 
-  const ws      = new WebSocket('ws://' + window.location.host + '/ws/chat/' + chatId);
-  const chatBox = document.getElementById('chat-box');
-  const input   = document.getElementById('user-input');
-  const sendBtn = document.getElementById('send-btn');
-  let replayDone = false;
+  const ws=new WebSocket('ws://'+window.location.host+'/ws/chat/'+chatId);
+  const chatBox=document.getElementById('chat-box');
+  const input=document.getElementById('user-input');
+  const sendBtn=document.getElementById('send-btn');
+  let replayDone=false;
 
-  function addBubble(type, text, dimmed) {
-    const w = document.createElement('div');
-    w.className = 'bubble ' + type;
-    if (dimmed) w.style.opacity = '0.55';
-    if (type !== 'system') {
-      const l = document.createElement('div'); l.className = 'blbl';
-      l.textContent = type === 'agent' ? 'Agent' : 'You';
-      w.appendChild(l);
-    }
-    const t = document.createElement('div'); t.textContent = text;
-    w.appendChild(t);
-    chatBox.appendChild(w);
-    chatBox.scrollTop = chatBox.scrollHeight;
-    return w;
+  function addBubble(type,text,dimmed){
+    const w=document.createElement('div'); w.className='bubble '+type;
+    if(dimmed) w.style.opacity='0.55';
+    if(type!=='system'){const l=document.createElement('div');l.className='blbl';l.textContent=type==='agent'?'Agent':'You';w.appendChild(l);}
+    const t=document.createElement('div');t.textContent=text;w.appendChild(t);
+    chatBox.appendChild(w); chatBox.scrollTop=chatBox.scrollHeight; return w;
+  }
+  function addReplayDivider(){
+    const d=document.createElement('div');d.className='replay-div';d.innerHTML='<span>↑ previous session ↑</span>';chatBox.appendChild(d);
   }
 
-  function addReplayDivider() {
-    const d = document.createElement('div'); d.className = 'replay-div';
-    d.innerHTML = '<span>↑ previous session ↑</span>';
-    chatBox.appendChild(d);
-  }
-
-  function renderInlineChart(bubbleEl, widgetType, result, query) {
-    if (!result || !result.length) return;
-    const wt   = (widgetType||'').toUpperCase();
-    const wrap = document.createElement('div'); wrap.className = 'chat-chart-wrap';
-    const addBtn = document.createElement('button'); addBtn.className = 'add-to-canvas-btn'; addBtn.textContent = '+ Canvas';
-    addBtn.addEventListener('click', () => addToCanvas(widgetType, result, query, _lastSqlQuery));
+  function renderInlineChart(bubbleEl,widgetType,result,query){
+    if(!result||!result.length) return;
+    const wt=(widgetType||'').toUpperCase();
+    const wrap=document.createElement('div'); wrap.className='chat-chart-wrap';
+    const addBtn=document.createElement('button'); addBtn.className='add-to-canvas-btn'; addBtn.textContent='+ Canvas';
+    addBtn.addEventListener('click',()=>addToCanvas(widgetType,result,query,_lastSqlQuery));
     wrap.appendChild(addBtn);
 
-    if (wt === 'KPI') {
-      const { valueKeys } = detectCols(result);
-      const pk  = valueKeys[0] || Object.keys(result[0])[0];
-      const val = result[0][pk];
-      const kpiDiv = document.createElement('div'); kpiDiv.className = 'chat-kpi-inline';
-      kpiDiv.innerHTML = `<div class="kv">${typeof val==='number'?fmtNum(val):val}</div><div class="kl">${pk.replace(/_/g,' ')}</div>`;
+    if(wt==='KPI'){
+      const{valueKeys}=detectCols(result);
+      const pk=valueKeys[0]||Object.keys(result[0])[0];
+      const val=result[0][pk];
+      const kpiDiv=document.createElement('div');kpiDiv.className='chat-kpi-inline';
+      kpiDiv.innerHTML=`<div class="kv">${typeof val==='number'?fmtNum(val):val}</div><div class="kl">${pk.replace(/_/g,' ')}</div>`;
       wrap.appendChild(kpiDiv);
+    } else if(wt==='TABLE'){
+      // Inline table preview in chat
+      const tbl=buildChatTableEl(result);
+      if(tbl) wrap.appendChild(tbl);
     } else {
-      const cfg = chartCfgForType(wt, result);
-      if (cfg) { const canvas = document.createElement('canvas'); wrap.appendChild(canvas); new Chart(canvas, cfg); }
+      const cfg=chartCfgForType(wt,result);
+      if(cfg){const canvas=document.createElement('canvas');wrap.appendChild(canvas);new Chart(canvas,cfg);}
     }
-    bubbleEl.appendChild(wrap);
-    chatBox.scrollTop = chatBox.scrollHeight;
+    bubbleEl.appendChild(wrap); chatBox.scrollTop=chatBox.scrollHeight;
   }
 
-  ws.onopen = () => {
-    document.getElementById('conn-dot').className = 'live';
-    document.getElementById('conn-label').textContent = 'live';
-    logEvent('sys', 'connected → ' + chatId);
+  ws.onopen=()=>{
+    document.getElementById('conn-dot').className='live';
+    document.getElementById('conn-label').textContent='live';
+    logEvent('sys','connected → '+chatId);
   };
-
-  ws.onmessage = (event) => {
-    const data     = JSON.parse(event.data);
-    const isReplay = data.system_status === null;
-    if (isReplay && !replayDone) {
-      addBubble(data.sender, data.message, true);
-      logEvent('in', `[replay] ${data.sender}: ${data.message.slice(0,60)}`);
-      return;
-    }
-    if (!replayDone && !isReplay) {
-      if (chatBox.children.length > 0) addReplayDivider();
-      replayDone = true; input.disabled = false; sendBtn.disabled = false; input.focus();
-    }
-    const bubbleEl = addBubble(data.sender === 'user' ? 'user' : 'agent', data.message, false);
-    const s = data.system_status;
-    if (s && s.result && s.result.length && s.widget) renderInlineChart(bubbleEl, s.widget, s.result, s.query);
+  ws.onmessage=(event)=>{
+    const data=JSON.parse(event.data),isReplay=data.system_status===null;
+    if(isReplay&&!replayDone){addBubble(data.sender,data.message,true);logEvent('in',`[replay] ${data.sender}: ${data.message.slice(0,60)}`);return;}
+    if(!replayDone&&!isReplay){if(chatBox.children.length>0)addReplayDivider();replayDone=true;input.disabled=false;sendBtn.disabled=false;input.focus();}
+    const bubbleEl=addBubble(data.sender==='user'?'user':'agent',data.message,false);
+    const s=data.system_status;
+    if(s&&s.result&&s.result.length&&s.widget) renderInlineChart(bubbleEl,s.widget,s.result,s.query);
     updateState(s);
-    logEvent('in', `${data.sender}: ${data.message.slice(0,70)}`);
+    logEvent('in',`${data.sender}: ${data.message.slice(0,70)}`);
   };
-
-  ws.onerror = () => {
-    document.getElementById('conn-dot').className = 'error';
-    document.getElementById('conn-label').textContent = 'error';
-    addBubble('system', 'Connection error — refresh to reconnect.');
-    logEvent('err', 'WebSocket error');
+  ws.onerror=()=>{
+    document.getElementById('conn-dot').className='error';
+    document.getElementById('conn-label').textContent='error';
+    addBubble('system','Connection error — refresh to reconnect.');
+    logEvent('err','WebSocket error');
   };
-
-  ws.onclose = () => {
-    document.getElementById('conn-dot').className = '';
-    document.getElementById('conn-label').textContent = 'closed';
-    addBubble('system', 'Session ended.');
-    sendBtn.disabled = true; input.disabled = true;
-    logEvent('sys', 'disconnected');
+  ws.onclose=()=>{
+    document.getElementById('conn-dot').className='';
+    document.getElementById('conn-label').textContent='closed';
+    addBubble('system','Session ended.');
+    sendBtn.disabled=true;input.disabled=true;
+    logEvent('sys','disconnected');
   };
-
-  function sendMessage() {
-    const text = input.value.trim();
-    if (!text || ws.readyState !== WebSocket.OPEN) return;
-    ws.send(text); addBubble('user', text, false);
-    logEvent('out', 'user: ' + text.slice(0,70)); input.value = '';
+  function sendMessage(){
+    const text=input.value.trim();
+    if(!text||ws.readyState!==WebSocket.OPEN) return;
+    ws.send(text);addBubble('user',text,false);
+    logEvent('out','user: '+text.slice(0,70));input.value='';
   }
-  sendBtn.addEventListener('click', sendMessage);
-  input.addEventListener('keydown', e => { if (e.key==='Enter') sendMessage(); });
+  sendBtn.addEventListener('click',sendMessage);
+  input.addEventListener('keydown',e=>{if(e.key==='Enter') sendMessage();});
 
-  // ── Publish ────────────────────────────────────────────────────
-  const overlay   = document.getElementById('publish-overlay');
-  const pubName   = document.getElementById('pub-name');
-  const pubDesc   = document.getElementById('pub-desc');
-  const pubStatus = document.getElementById('pub-status');
-  const pubConfirm= document.getElementById('pub-confirm');
-  if (_source==='spaces'){document.getElementById('publish-btn').style.display="none"};
-  document.getElementById('publish-btn').addEventListener('click', async () => {
-    if (!Object.keys(widgetRegistry).length) {
-      logEvent('err', 'No widgets on canvas to publish.'); return;
-    }
-    pubStatus.className = 'pub-status'; pubStatus.textContent = '';
-    pubName.value = ''; pubDesc.value = '';
-    overlay.classList.add('visible'); pubName.focus();
-    // fetch name and description
-    if (_dashId){
-      const resData = await fetch(`/dashboards/${_dashId}`, {
-        method:"GET", headers:{'Content-Type':'application/json'}
-      })
-      const data = await resData.json();
-      console.log(data)
-      pubName.value = data.name;
-      pubDesc.value = data.description;
-    }
-    
-  });
-  document.getElementById('pub-cancel').addEventListener('click', () => overlay.classList.remove('visible'));
-  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.classList.remove('visible'); });
-  pubName.addEventListener('keydown', e => {
-    if (e.key==='Enter') pubConfirm.click();
-    if (e.key==='Escape') overlay.classList.remove('visible');
-  });
+  // ── Publish ──
+  const overlay=document.getElementById('publish-overlay');
+  const pubName=document.getElementById('pub-name');
+  const pubDesc=document.getElementById('pub-desc');
+  const pubStatus=document.getElementById('pub-status');
+  const pubConfirm=document.getElementById('pub-confirm');
+  if(_source==='spaces') document.getElementById('publish-btn').style.display='none';
 
-  function collectCanvasState() {
-    return Array.from(document.getElementById('canvas-area').querySelectorAll('.canvas-widget')).map((el,i) => ({
-      uid: el.id, x:parseInt(el.style.left)||0, y:parseInt(el.style.top)||0,
-      width:el.offsetWidth, height:el.offsetHeight, z_index:parseInt(el.style.zIndex)||(i+1),
+  document.getElementById('publish-btn').addEventListener('click',async()=>{
+    if(!Object.keys(widgetRegistry).length){logEvent('err','No widgets on canvas to publish.');return;}
+    pubStatus.className='pub-status';pubStatus.textContent='';pubName.value='';pubDesc.value='';
+    overlay.classList.add('visible');pubName.focus();
+    if(_dashId){
+      const r=await fetch(`/dashboards/${_dashId}`,{method:'GET',headers:{'Content-Type':'application/json'}});
+      const d=await r.json(); pubName.value=d.name; pubDesc.value=d.description;
+    }
+  });
+  document.getElementById('pub-cancel').addEventListener('click',()=>overlay.classList.remove('visible'));
+  overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.classList.remove('visible');});
+  pubName.addEventListener('keydown',e=>{if(e.key==='Enter')pubConfirm.click();if(e.key==='Escape')overlay.classList.remove('visible');});
+
+  function collectCanvasState(){
+    return Array.from(document.getElementById('canvas-area').querySelectorAll('.canvas-widget')).map((el,i)=>({
+      uid:el.id,x:parseInt(el.style.left)||0,y:parseInt(el.style.top)||0,
+      width:el.offsetWidth,height:el.offsetHeight,z_index:parseInt(el.style.zIndex)||(i+1),
     }));
   }
 
-  pubConfirm.addEventListener('click', async () => {
-    const name = pubName.value.trim();
-    if (!name) { pubName.focus(); pubName.style.borderColor='var(--red)'; setTimeout(()=>{pubName.style.borderColor='';},1200); return; }
-    pubConfirm.disabled = true; 
-    pubConfirm.textContent = 'Saving…'; 
-    pubStatus.className = 'pub-status';
-    const urlPut = _dashId?`/${_dashId}`:"";
-    const method = _dashId?"PUT":"POST";
-    try {
-      const dashRes = await fetch(`/dashboards${urlPut}`, {
-        method:method, headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ name, description: pubDesc.value.trim()||null }),
-      });
-      if (!dashRes.ok) throw new Error(`Dashboard create failed (${dashRes.status})`);
-      const dash   = await dashRes.json();
-      const dashId = dash.id;
-      logEvent('out', `Dashboard created: id=${dashId} "${name}"`);
-
-      const geometry = collectCanvasState();
-      console.log(geometry);
-      const results  = await Promise.all(geometry.map(geo => {
-        const meta = widgetRegistry[geo.uid] || {};
-        return fetch(`/dashboards/${dashId}/widgets`, {
-          method:'POST', headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({
-            widget_uid:  geo.uid, 
-            widget_type: meta.widgetType||'BARCHART',
-            title:       meta.query||null,
-            x:geo.x, y:geo.y, width:geo.width, height:geo.height, z_index:geo.z_index,
-            query:       meta.query||null, sql_query:meta.sqlQuery||null,
-            result_json: meta.result||null, config_json:null, status:'NEW',
-          }),
-        });
+  pubConfirm.addEventListener('click',async()=>{
+    const name=pubName.value.trim();
+    if(!name){pubName.focus();pubName.style.borderColor='var(--red)';setTimeout(()=>{pubName.style.borderColor='';},1200);return;}
+    pubConfirm.disabled=true;pubConfirm.textContent='Saving…';pubStatus.className='pub-status';
+    const method=_dashId?'PUT':'POST';
+    const url=_dashId?`/dashboards/${_dashId}`:'/dashboards';
+    try{
+      const dashRes=await fetch(url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify({name,description:pubDesc.value.trim()||null})});
+      if(!dashRes.ok) throw new Error(`Dashboard save failed (${dashRes.status})`);
+      const dash=await dashRes.json(); const dashId=dash.id;
+      logEvent('out',`Dashboard saved: id=${dashId} "${name}"`);
+      const geometry=collectCanvasState();
+      const results=await Promise.all(geometry.map(geo=>{
+        const meta=widgetRegistry[geo.uid]||{};
+        return fetch(`/dashboards/${dashId}/widgets`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+          widget_uid:geo.uid,widget_type:meta.widgetType||'BARCHART',title:meta.query||null,
+          x:geo.x,y:geo.y,width:geo.width,height:geo.height,z_index:geo.z_index,
+          query:meta.query||null,sql_query:meta.sqlQuery||null,result_json:meta.result||null,config_json:null,status:'NEW',
+        })});
       }));
-      const failed = results.filter(r=>!r.ok);
-      if (failed.length) throw new Error(`${failed.length} widget(s) failed to save.`);
-      logEvent('out', `${geometry.length} widget(s) saved → dashboard ${dashId}`);
-      pubStatus.textContent = `✓ Saved "${name}" — redirecting…`; pubStatus.className = 'pub-status success';
-      pubConfirm.textContent = 'Saved!';
-      setTimeout(() => { window.location.href = '/dashboards.html?published=1'; }, 1200);
-    } catch (err) {
-      logEvent('err', 'Publish failed: ' + err.message);
-      pubStatus.textContent = '✗ ' + err.message; pubStatus.className = 'pub-status error';
-      pubConfirm.textContent = 'Save Dashboard'; pubConfirm.disabled = false;
+      const failed=results.filter(r=>!r.ok);
+      if(failed.length) throw new Error(`${failed.length} widget(s) failed to save.`);
+      logEvent('out',`${geometry.length} widget(s) saved → dashboard ${dashId}`);
+      pubStatus.textContent=`✓ Saved "${name}" — redirecting…`;pubStatus.className='pub-status success';
+      pubConfirm.textContent='Saved!';
+      setTimeout(()=>{window.location.href='/dashboards.html?published=1';},1200);
+    }catch(err){
+      logEvent('err','Publish failed: '+err.message);
+      pubStatus.textContent='✗ '+err.message;pubStatus.className='pub-status error';
+      pubConfirm.textContent='Save Dashboard';pubConfirm.disabled=false;
     }
   });
 
-  // Restore if ?dashboard= present in builder mode too
-  if (_dashId) {
-    const onFirstMsg = () => { ws.removeEventListener('message', onFirstMsg); restoreDashboard(_dashId); };
-    ws.addEventListener('message', onFirstMsg);
+  if(_dashId){
+    const onFirstMsg=()=>{ws.removeEventListener('message',onFirstMsg);restoreDashboard(_dashId);};
+    ws.addEventListener('message',onFirstMsg);
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// 14. REVIEW MODE: approve/reject + edit query
-// ═══════════════════════════════════════════════════════════════
-if (_mode === 'review') {
-  // Connection dot stays grey (no WS in review mode)
-  document.getElementById('conn-label').textContent = 'review';
+// ═══════════════════════════════════════════
+// 14. REVIEW MODE
+// ═══════════════════════════════════════════
+if(_mode==='review'){
+  document.getElementById('conn-label').textContent='review';
+  if(_dashId) restoreDashboard(_dashId);
 
-  // Load dashboard immediately — no WS gating needed
-  if (_dashId) restoreDashboard(_dashId);
+  async function updateStatus(status){
+    if(!_dashId) return;
+    const sel=document.querySelector('.canvas-widget.selected');
+    if(!sel){logEvent('err','Select a widget first.');return;}
+    if(status==='APPROVED') await executeQuery();
+    const widget_uid=sel.id;
+    const widget=widgetRegistry[widget_uid];
+    const body=status==='APPROVED'
+      ?JSON.stringify({status,sql_query:document.getElementById('sql-code').textContent,result_json:widget.result})
+      :JSON.stringify({status});
+    try{
+      const res=await fetch(`/dashboards/${_dashId}/widgets/${widget_uid}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body});
+      if(!res.ok) throw new Error(`HTTP ${res.status}`);
+      logEvent('out',`Widget ${widget_uid} → ${status}`);
+      window.location.reload(true);
+    }catch(err){logEvent('err',`Status update failed: ${err.message}`);}
+  }
 
-  // Approve / Reject
-  async function updateStatus(status) {
-    if (!_dashId) return;
-    const selectedWidget = document.querySelector('.canvas-widget.selected');
-    if (!selectedWidget) { logEvent('err', 'Select a widget first.'); return; }
-    if (status==="APPROVED"){
-      await executeQuery();
-    }
-    const widget_uid = selectedWidget.id;
-    const widget = widgetRegistry[widget_uid];
-    console.log(widget);
-    const body = status === 'APPROVED'
-      ? JSON.stringify({ status, sql_query: document.getElementById('sql-code').textContent, result_json:widget.result})
-      : JSON.stringify({ status });
-    try {
-      const res = await fetch(`/dashboards/${_dashId}/widgets/${widget_uid}`, {
-        method:'PATCH', headers:{'Content-Type':'application/json'}, body,
+  document.getElementById('approve-btn').addEventListener('click',()=>updateStatus('APPROVED'));
+  document.getElementById('reject-btn').addEventListener('click', ()=>updateStatus('REJECTED'));
+
+  async function executeQuery(){
+    if(!_dashId) return;
+    const sel=document.querySelector('.canvas-widget.selected');
+    if(!sel){logEvent('err','Select a widget first.');return;}
+    const widget_uid=sel.id;
+    try{
+      const res=await fetch(`/dashboards/${_dashId}/widgets/${widget_uid}/query`,{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({sql_query:document.getElementById('sql-code').textContent}),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      logEvent('out', `Widget ${widget_uid} → ${status}`);
-        // Load dashboard immediately — no WS gating needed
-        window.location.reload(true);
-    } catch(err) { logEvent('err', `Status update failed: ${err.message}`); }
+      if(!res.ok) throw new Error(`HTTP ${res.status}`);
+      const wd=await res.json();
+      widgetRegistry[widget_uid]=wd;
+      document.getElementById(widget_uid)?.remove();
+      buildWidgetEl({id:wd.widget_uid,wt:wd.widget_type,title:wd.title,result:wd.result_json,query:wd.query,sqlQuery:wd.sql_query,x:wd.x,y:wd.y,width:wd.width,height:wd.height,zIndex:wd.z_index,status:wd.status});
+      logEvent('out','Data fetched!');
+    }catch(err){logEvent('err',`Execute failed: ${err.message}`);}
   }
-
-  document.getElementById('approve-btn').addEventListener('click', () => updateStatus('APPROVED'));
-  document.getElementById('reject-btn').addEventListener('click',  () => updateStatus('REJECTED'));
-
-  // Execute query
-
-
-  function updateWidgetEl({ id, wt, title, result, query, sqlQuery }) {
-
-    const widget = document.getElementById(id);
-    if (!widget) {
-        buildWidgetEl({ id, wt, title, result, query, sqlQuery });
-        return;
-    }
-
-    // Destroy previous chart
-    if (chartInstances[id]) {
-        chartInstances[id].destroy();
-        delete chartInstances[id];
-    }
-
-    // Update header
-    widget.querySelector('.cw-type-badge').textContent = wt;
-    widget.querySelector('.cw-title').textContent = title || query || wt;
-
-    // Replace body
-    const body = widget.querySelector('.cw-body');
-    body.innerHTML = '';
-
-    if (wt === 'KPI') {
-
-        const { valueKeys } = detectCols(result);
-
-        const pk = valueKeys[0] ||
-            (result[0] ? Object.keys(result[0])[0] : null);
-
-        const val = pk && result[0]
-            ? result[0][pk]
-            : '—';
-
-        const extras = [];
-
-        if (result.length > 1) {
-            result.slice(0, 5).forEach(r => {
-                const lk =
-                    Object.keys(r).find(k => typeof r[k] !== 'number') || pk;
-
-                if (pk) {
-                    extras.push(`${r[lk]}: ${fmtNum(r[pk])}`);
-                }
-            });
-        }
-
-        const kpiDiv = document.createElement('div');
-        kpiDiv.className = 'kpi-canvas';
-        kpiDiv.innerHTML =
-            `<div class="kv">${typeof val === 'number' ? fmtNum(val) : val}</div>` +
-            (pk ? `<div class="kl">${pk.replace(/_/g, ' ')}</div>` : '') +
-            (extras.length ? `<div class="ks">${extras.join(' · ')}</div>` : '');
-
-        body.appendChild(kpiDiv);
-
-    } else if (result && result.length) {
-
-        const cfg = chartCfgForType(wt, result);
-
-        if (cfg) {
-            cfg.options.animation = { duration: 500 };
-
-            const canvas = document.createElement('canvas');
-            body.appendChild(canvas);
-
-            requestAnimationFrame(() => {
-                chartInstances[id] = new Chart(canvas, cfg);
-            });
-        }
-
-    } else {
-
-        const ph = document.createElement('div');
-        ph.style.cssText =
-            'font-size:11px;color:var(--text-muted);text-align:center;padding:8px;';
-        ph.textContent = query || 'No data';
-
-        body.appendChild(ph);
-    }
-
-      // Update registry
-      widgetRegistry[id] = {
-          uid: id,
-          widgetType: wt,
-          query,
-          sqlQuery,
-          result
-      };
-      }
-
-
-
-
-  async function executeQuery() {
-    if (!_dashId) return;
-
-    const selectedWidget = document.querySelector('.canvas-widget.selected');
-    if (!selectedWidget) {
-        logEvent('err', 'Select a widget first.');
-        return;
-    }
-
-    const widget_uid = selectedWidget.id;
-
-    try {
-        const res = await fetch(
-            `/dashboards/${_dashId}/widgets/${widget_uid}/query`,
-            {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    sql_query: document.getElementById('sql-code').textContent
-                })
-            }
-        );
-
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-        const widgetData = await res.json();
-
-        // Update existing widget instead of creating a duplicate
-        widgetRegistry[widget_uid] = widgetData;
-
-        const oldWidget = document.getElementById(widget_uid);
-        oldWidget.remove();
-        buildWidgetEl({id: widgetData.widget_uid,
-          wt:widgetData.widget_type,
-          title:widgetData.title,
-          result:widgetData.result_json,
-          query:widgetData.query,
-          sqlQuery:widgetData.sql_query,
-          x:widgetData.x,
-          y:widgetData.y,
-          width:widgetData.width,
-          height:widgetData.height,
-          zIndex:widgetData.z_index,
-          status:widgetData.status
-        });
-
-        logEvent('out', 'Data fetched!');
-    } catch (err) {
-        logEvent('err', `Status update failed: ${err.message}`);
-    }
-}
-
-  const execute_query = document.getElementById('execute-query');
-  execute_query.addEventListener('click', executeQuery);
+  document.getElementById('execute-query').addEventListener('click',executeQuery);
 
   // Edit Query modal
-  const editOverlay  = document.getElementById('edit-query-overlay');
-  const editTextarea = document.getElementById('edit-query-text');
-
-  function openEditQueryModal() {
-    const sel  = document.querySelector('.canvas-widget.selected');
-    const meta = sel ? widgetRegistry[sel.id] : null;
-    document.getElementById('user-query-display').textContent = meta?.query?.toUpperCase() || 'No widget selected';
-    editTextarea.value = meta?.sqlQuery || document.getElementById('sql-code').textContent || '';
-    editOverlay.classList.add('visible');
-    editTextarea.focus();
+  const editOverlay=document.getElementById('edit-query-overlay');
+  const editTextarea=document.getElementById('edit-query-text');
+  function openEditQueryModal(){
+    const sel=document.querySelector('.canvas-widget.selected');
+    const meta=sel?widgetRegistry[sel.id]:null;
+    document.getElementById('user-query-display').textContent=meta?.query?.toUpperCase()||'No widget selected';
+    editTextarea.value=meta?.sqlQuery||document.getElementById('sql-code').textContent||'';
+    editOverlay.classList.add('visible'); editTextarea.focus();
   }
-  function closeEditQueryModal() { editOverlay.classList.remove('visible'); }
-
-  document.getElementById('edit-query-btn').addEventListener('click', openEditQueryModal);
-  document.getElementById('edit-query-close').addEventListener('click', closeEditQueryModal);
-  document.getElementById('edit-query-cancel').addEventListener('click', closeEditQueryModal);
-  editOverlay.addEventListener('click', e => { if (e.target===editOverlay) closeEditQueryModal(); });
-
-  document.getElementById('edit-query-save').addEventListener('click', () => {
-    const updated = editTextarea.value.trim();
-    document.getElementById('sql-code').textContent = updated;
-    _lastSqlQuery = updated;
-    // Also update registry for the selected widget
-    const sel = document.querySelector('.canvas-widget.selected');
-    if (sel && widgetRegistry[sel.id]) widgetRegistry[sel.id].sqlQuery = updated;
+  function closeEditQueryModal(){editOverlay.classList.remove('visible');}
+  document.getElementById('edit-query-btn').addEventListener('click',openEditQueryModal);
+  document.getElementById('edit-query-close').addEventListener('click',closeEditQueryModal);
+  document.getElementById('edit-query-cancel').addEventListener('click',closeEditQueryModal);
+  editOverlay.addEventListener('click',e=>{if(e.target===editOverlay)closeEditQueryModal();});
+  document.getElementById('edit-query-save').addEventListener('click',()=>{
+    const updated=editTextarea.value.trim();
+    document.getElementById('sql-code').textContent=updated; _lastSqlQuery=updated;
+    const sel=document.querySelector('.canvas-widget.selected');
+    if(sel&&widgetRegistry[sel.id]) widgetRegistry[sel.id].sqlQuery=updated;
     closeEditQueryModal();
   });
 }
