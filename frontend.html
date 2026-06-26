@@ -819,11 +819,15 @@ function buildWidgetEl({ id, wt, title, result, query, sqlQuery, x, y, width, he
   const closeBtn = document.createElement('button');
   closeBtn.className = 'cw-close';
   closeBtn.textContent = '×';
-  closeBtn.addEventListener('click', () => {
+  closeBtn.addEventListener('click', async () => {
     if (chartInstances[id]) { chartInstances[id].destroy(); delete chartInstances[id]; }
     delete widgetRegistry[id];
     widget.remove();
     if (!ca.querySelector('.canvas-widget')) document.getElementById('canvas-empty').style.opacity = '1';
+    // Delete from widget table
+    const res_widget = await fetch(`/dashboards/${_dashId}/widgets/${id}`, {
+      method:"DELETE", headers:{'Content-Type':'application/json'}
+    })
   });
   hdr.appendChild(closeBtn);
   widget.appendChild(hdr);
@@ -1178,7 +1182,9 @@ if (_mode === 'builder') {
   pubConfirm.addEventListener('click', async () => {
     const name = pubName.value.trim();
     if (!name) { pubName.focus(); pubName.style.borderColor='var(--red)'; setTimeout(()=>{pubName.style.borderColor='';},1200); return; }
-    pubConfirm.disabled = true; pubConfirm.textContent = 'Saving…'; pubStatus.className = 'pub-status';
+    pubConfirm.disabled = true; 
+    pubConfirm.textContent = 'Saving…'; 
+    pubStatus.className = 'pub-status';
     const urlPut = _dashId?`/${_dashId}`:"";
     const method = _dashId?"PUT":"POST";
     try {
@@ -1192,12 +1198,14 @@ if (_mode === 'builder') {
       logEvent('out', `Dashboard created: id=${dashId} "${name}"`);
 
       const geometry = collectCanvasState();
+      console.log(geometry);
       const results  = await Promise.all(geometry.map(geo => {
         const meta = widgetRegistry[geo.uid] || {};
         return fetch(`/dashboards/${dashId}/widgets`, {
           method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({
-            widget_uid:  geo.uid, widget_type: meta.widgetType||'BARCHART',
+            widget_uid:  geo.uid, 
+            widget_type: meta.widgetType||'BARCHART',
             title:       meta.query||null,
             x:geo.x, y:geo.y, width:geo.width, height:geo.height, z_index:geo.z_index,
             query:       meta.query||null, sql_query:meta.sqlQuery||null,
