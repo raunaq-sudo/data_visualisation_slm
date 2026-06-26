@@ -533,6 +533,11 @@
 <div id="toast"></div>
 
 <script>
+
+const _params   = new URLSearchParams(window.location.search);
+const _mode     = _params.get('mode') === 'review' ? 'review' : 'builder';
+
+
 // ── Widget-type glyph SVGs ────────────────────────────────────────────
 const GLYPHS = {
   BARCHART: (color) => `
@@ -696,7 +701,9 @@ function confirmDelete(id, name, e) {
 function buildCard(dash) {
   const card = document.createElement('a');
   card.className  = 'dash-card';
-  card.href       = `/?dashboard=${dash.id}`;
+  // add mode
+  const mode_param = _mode=="review"?"&mode=review":"";
+  card.href       = `/?dashboard=${dash.id}${mode_param}`;
   card.dataset.id = dash.id;
   card.dataset.name = (dash.name || '').toLowerCase();
 
@@ -833,6 +840,9 @@ if (params.get('published')) {
     history.replaceState({}, '', '/dashboards.html');
   });
 }
+
+
+
 
 loadDashboards();
 </script>

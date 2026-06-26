@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
-from database import get_db
+from database import get_db, DB_FILE_PATH
 
 router = APIRouter(prefix="/dashboards", tags=["Dashboards"])
 
@@ -69,6 +69,7 @@ class WidgetPatch(BaseModel):
     result_json: Optional[Any] = None
     config_json: Optional[Any] = None
     status: Optional[str] = None
+    result_json: Optional[Any] = Field(default=None, description="Query result rows as JSON.")
 
 class WidgetRow(BaseModel):
     id:          int
@@ -156,6 +157,42 @@ def create_dashboard(body: DashboardCreate):
         return dict(db.execute(
             "SELECT * FROM dashboard WHERE id = ?", (cur.lastrowid,)
         ).fetchone())
+
+@router.put("/{dashboard_id}", response_model=DashboardRow)
+def update_dashboard(dashboard_id: int, body: DashboardCreate):
+    """Update an existing dashboard."""
+    now = _now()
+
+    with get_db() as db:
+        cur = db.execute(
+            """
+            UPDATE dashboard
+            SET
+                name = ?,
+                description = ?,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                body.name,
+                body.description,
+                now,
+                dashboard_id,
+            ),
+        )
+
+        if cur.rowcount == 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Dashboard not found",
+            )
+
+        return dict(
+            db.execute(
+                "SELECT * FROM dashboard WHERE id = ?",
+                (dashboard_id,),
+            ).fetchone()
+        )
 
 
 @router.get("", response_model=List[DashboardRow])
@@ -306,12 +343,13 @@ def update_widget_endpoint(dashboard_id: int, widget_uid: str, body: WidgetPatch
             v = getattr(body, col)
             if v is not None:
                 fields.append(f"{col} = ?"); vals.append(json.dumps(v))
-
+        print(fields, vals)
         if not fields:
             raise HTTPException(status_code=422, detail="Nothing to update.")
 
         fields.append("updated_at = ?"); vals.append(_now())
         vals += [dashboard_id, widget_uid]
+        
         db.execute(
             f"UPDATE dashboard_widget SET {', '.join(fields)} "
             f"WHERE dashboard_id = ? AND widget_uid = ?",
@@ -362,3 +400,40 @@ def save_canvas(dashboard_id: int, body: CanvasSave):
                 (w.x, w.y, w.width, w.height, w.z_index, now, dashboard_id, w.widget_uid),
             )
     return {"saved": len(body.widgets), "dashboard_id": dashboard_id}
+
+
+# ------ Execute query ------______-----
+
+@router.post("/{dashboard_id}/widgets/{widget_uid}/query")
+def execute_query(dashboard_id: int, widget_uid: str, body: WidgetPatch):
+
+    with get_db() as db:
+
+        _get_dashboard_or_404(db, dashboard_id)
+        _get_widget_or_404(db, dashboard_id, widget_uid)
+
+        # Save SQL
+        db.execute("""
+            UPDATE dashboard_widget
+            SET sql_query = ?
+            WHERE dashboard_id = ?
+            AND widget_uid = ?
+        """, (body.sql_query, dashboard_id, widget_uid))
+        db.commit()
+
+        # Execute SQL
+        with get_db(DB_FILE_PATH) as data_db:
+            rows = data_db.execute(body.sql_query).fetchall()
+
+        # Fetch updated widget
+        widget = db.execute("""
+            SELECT *
+            FROM dashboard_widget
+            WHERE dashboard_id = ?
+            AND widget_uid = ?
+        """, (dashboard_id, widget_uid)).fetchone()
+
+        payload = _row_to_widget(widget)
+        payload["result_json"] = [dict(r) for r in rows]
+        
+        return payload
