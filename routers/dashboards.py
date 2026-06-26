@@ -204,6 +204,31 @@ def list_dashboards():
         ).fetchall()
     return [dict(r) for r in rows]
 
+@router.get("/spaces", response_model=List[DashboardRow])
+def list_dashboards():
+    """Return all dashboards ordered newest-first."""
+    with get_db() as db:
+        rows = db.execute(
+            """
+            SELECT d.*
+            FROM dashboard d
+            WHERE EXISTS (
+                SELECT 1
+                FROM dashboard_widget w
+                WHERE w.dashboard_id = d.id
+            )
+            AND NOT EXISTS (
+                SELECT 1
+                FROM dashboard_widget w
+                WHERE w.dashboard_id = d.id
+                AND w.status <> 'APPROVED'
+            );
+             """
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+
 
 @router.get("/{dashboard_id}")
 def get_dashboard(dashboard_id: int):

@@ -536,7 +536,7 @@
 
 const _params   = new URLSearchParams(window.location.search);
 const _mode     = _params.get('mode') === 'review' ? 'review' : 'builder';
-
+const _dashboardType = _params.get('type') == 'spaces'?'/spaces':'';
 
 // ── Widget-type glyph SVGs ────────────────────────────────────────────
 const GLYPHS = {
@@ -702,8 +702,19 @@ function buildCard(dash) {
   const card = document.createElement('a');
   card.className  = 'dash-card';
   // add mode
-  const mode_param = _mode=="review"?"&mode=review":"";
-  card.href       = `/?dashboard=${dash.id}${mode_param}`;
+  const params = new URLSearchParams({
+    dashboard: dash.id
+  });
+
+  if (_mode === "review") {
+      params.set("mode", "review");
+  }
+
+  if (_dashboardType === "/spaces") {
+      params.set("type", "spaces");
+  }
+
+  card.href = `/?${params.toString()}`;
   card.dataset.id = dash.id;
   card.dataset.name = (dash.name || '').toLowerCase();
 
@@ -796,7 +807,8 @@ async function loadDashboards() {
   try {
     // Fetch all dashboard summaries, then enrich each with widget count
     // GET /dashboards returns list; GET /dashboards/{id} returns widgets too
-    const res = await fetch('/dashboards');
+    
+    const res = await fetch(`/dashboards${_dashboardType}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const list = await res.json();   // [{id, name, description, created_at, updated_at}]
 

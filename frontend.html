@@ -466,7 +466,14 @@
       <path d="M5 4H1M5 6H2M5 8H1" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
     </svg>
   </button>
-
+  <!-- Navigate to my dashboard -->
+  <button class="tog-btn" id="my-dashboard" title="My Dashboards">
+    My Dashboards
+  </button>
+  <!-- Navigate to Dashboard Spaces -->
+  <button class="tog-btn" id="dashboard-spaces" title="Spaces">
+    Spaces
+  </button>
   <!-- Publish — builder only -->
   <button class="publish-btn builder-only" id="publish-btn">
     <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
@@ -639,7 +646,7 @@
 const _params   = new URLSearchParams(window.location.search);
 const _mode     = _params.get('mode') === 'review' ? 'review' : 'builder';
 const _dashId   = _params.get('dashboard') ? Number(_params.get('dashboard')) : null;
-
+const _source   = _params.get('type')
 document.body.classList.add('mode-' + _mode);
 
 // ═══════════════════════════════════════════════════════════════
@@ -673,6 +680,23 @@ function toggleSection(id) {
   document.getElementById(id).classList.toggle('open');
 }
 
+const myDashboard = document.getElementById('my-dashboard')
+myDashboard.addEventListener("click", () => {
+    const url = _mode === "review"
+        ? "/dashboards.html?mode=review"
+        : "/dashboards.html";
+
+    window.location.href = url;
+});
+
+const spaces = document.getElementById('dashboard-spaces');
+spaces.addEventListener("click", () => {
+    const url = _mode === "review"
+        ? "/dashboards.html?type=spaces&mode=review"
+        : "/dashboards.html?type=spaces";
+
+    window.location.href = url;
+});
 // ═══════════════════════════════════════════════════════════════
 // 4. CHART HELPERS (shared)
 // ═══════════════════════════════════════════════════════════════
@@ -1015,8 +1039,38 @@ applyTheme(localStorage.getItem('ds-theme') || 'dark');
 // 11. PANEL TOGGLES
 // ═══════════════════════════════════════════════════════════════
 const togChat = document.getElementById('tog-chat');
-if (togChat) togChat.addEventListener('click', () => document.getElementById('chat-panel').classList.toggle('collapsed'));
-document.getElementById('tog-inspector').addEventListener('click', () => document.getElementById('inspector').classList.toggle('collapsed'));
+const togInspector = document.getElementById('tog-inspector');
+
+
+const chatPanel = document.getElementById("chat-panel");
+const inspector = document.getElementById("inspector");
+
+if (_source === "spaces") {
+    togChat.style.display = "none";
+    togInspector.style.display = "none";
+
+    chatPanel.classList.add("collapsed");
+    inspector.classList.add("collapsed");
+}
+
+if (_mode === "builder") {
+    togInspector.style.display = "none";
+
+    inspector.classList.add("collapsed");
+    // or use inspector.style.display = "none" if you never want it shown
+}
+
+if (togChat) {
+    togChat.addEventListener("click", () => {
+        chatPanel.classList.toggle("collapsed");
+    });
+}
+
+if (togInspector) {
+    togInspector.addEventListener("click", () => {
+        inspector.classList.toggle("collapsed");
+    });
+}
 
 // ═══════════════════════════════════════════════════════════════
 // 12. COPY SQL
@@ -1145,7 +1199,7 @@ if (_mode === 'builder') {
   const pubDesc   = document.getElementById('pub-desc');
   const pubStatus = document.getElementById('pub-status');
   const pubConfirm= document.getElementById('pub-confirm');
-
+  if (_source==='spaces'){document.getElementById('publish-btn').style.display="none"};
   document.getElementById('publish-btn').addEventListener('click', async () => {
     if (!Object.keys(widgetRegistry).length) {
       logEvent('err', 'No widgets on canvas to publish.'); return;
@@ -1260,6 +1314,8 @@ if (_mode === 'review') {
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       logEvent('out', `Widget ${widget_uid} → ${status}`);
+        // Load dashboard immediately — no WS gating needed
+        window.location.reload(true);
     } catch(err) { logEvent('err', `Status update failed: ${err.message}`); }
   }
 
@@ -1396,7 +1452,6 @@ if (_mode === 'review') {
 
         const oldWidget = document.getElementById(widget_uid);
         oldWidget.remove();
-        console.log(widgetData)
         buildWidgetEl({id: widgetData.widget_uid,
           wt:widgetData.widget_type,
           title:widgetData.title,
