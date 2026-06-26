@@ -1302,6 +1302,9 @@ if (_mode === 'review') {
     if (!_dashId) return;
     const selectedWidget = document.querySelector('.canvas-widget.selected');
     if (!selectedWidget) { logEvent('err', 'Select a widget first.'); return; }
+    if (status==="APPROVED"){
+      await executeQuery();
+    }
     const widget_uid = selectedWidget.id;
     const widget = widgetRegistry[widget_uid];
     console.log(widget);
