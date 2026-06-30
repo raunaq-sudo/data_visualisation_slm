@@ -255,6 +255,51 @@
     .modal-field{display:flex;flex-direction:column;gap:6px;}
     .modal-label{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);}
     .modal-readonly{min-height:42px;background:var(--bg);border:1px solid var(--border);border-radius:var(--r);padding:10px;color:var(--text);font-size:12px;line-height:1.5;overflow-wrap:break-word;}
+    .report-wrap{
+    width:100%;
+    height:100%;
+    overflow:auto;
+    padding:14px;
+    font-size:13px;
+    line-height:1.7;
+    color:var(--text);
+}
+
+.report-wrap h1,
+.report-wrap h2,
+.report-wrap h3{
+    margin:0 0 10px;
+    color:var(--accent);
+}
+
+.report-wrap p{
+    margin:0 0 12px;
+}
+
+.report-wrap ul,
+.report-wrap ol{
+    padding-left:20px;
+    margin:8px 0 12px;
+}
+
+.report-wrap table{
+    width:100%;
+    border-collapse:collapse;
+    margin:12px 0;
+}
+
+.report-wrap th,
+.report-wrap td{
+    border:1px solid var(--border);
+    padding:6px 8px;
+    text-align:left;
+}
+
+.report-wrap code{
+    background:var(--surface-2);
+    padding:2px 5px;
+    border-radius:4px;
+}
   </style>
 </head>
 <body>
@@ -592,19 +637,31 @@ function makeWidgetDraggable(el){
 // ═══════════════════════════════════════════
 // 6. WIDGET FACTORY
 // ═══════════════════════════════════════════
+function buildReportEl(content) {
+    const wrap = document.createElement("div");
+    wrap.className = "report-wrap";
+
+    if (typeof content === "string") {
+        wrap.innerHTML = content;
+    } else if (content) {
+        wrap.innerHTML = content.html || content.report || "";
+    }
+
+    return wrap;
+}
 function buildWidgetEl({id,wt,title,result,query,sqlQuery,x,y,width,height,zIndex,status}){
   const ca=document.getElementById('canvas-area');
   if(document.getElementById(id)) return null;
 
   const status_em = status==='APPROVED'?'✅':status==='REJECTED'?'❌':'🆕';
   const isTable   = wt==='TABLE';
-
+  const isReport = wt === "REPORT";
   const widget=document.createElement('div');
   widget.className='canvas-widget'; widget.id=id;
   widget.style.left  =(x||40)+'px';
   widget.style.top   =(y||40)+'px';
-  widget.style.width =(width||(wt==='KPI'?200:isTable?480:380))+'px';
-  widget.style.height=(height||(wt==='KPI'?140:isTable?280:240))+'px';
+  widget.style.width =(width||(wt==='KPI'?200:isTable?480: isReport ? 600 : 380))+'px';
+  widget.style.height=(height||(wt==='KPI'?140:isTable?280: isReport ? 500 :240))+'px';
   if(zIndex) widget.style.zIndex=zIndex;
 
   // Header
@@ -637,7 +694,7 @@ function buildWidgetEl({id,wt,title,result,query,sqlQuery,x,y,width,height,zInde
       (extras.length?`<div class="ks">${extras.join('  ·  ')}</div>`:'');
     body.appendChild(kpiDiv);
 
-  } else if(isTable){
+  } else if(isTable || isReport){
     // TABLE widget — scrollable, no zoom plugin needed
     const tableEl=buildTableEl(result);
     if(tableEl) body.appendChild(tableEl);
@@ -647,6 +704,12 @@ function buildWidgetEl({id,wt,title,result,query,sqlQuery,x,y,width,height,zInde
       meta.textContent=`${result.length} row${result.length!==1?'s':''} · ${Object.keys(result[0]).length} col${Object.keys(result[0]).length!==1?'s':''}`;
       widget.appendChild(meta);
     }
+  
+   } else if (isReport) {
+
+    body.appendChild(buildReportEl(result));
+
+
 
   } else if(result&&result.length){
     const cfg=chartCfgForType(wt,result);
