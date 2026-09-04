@@ -1,6 +1,40 @@
-*.db
-*.zip
-*.csv
-/venv
-/db_setup/data
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+# Environment variables
 .env
+
+# Database files
+*.db
+
+# Archives
+*.zip
+
+# Data files (use db_setup/data_db_setup.py to ingest)
+*.csv
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
