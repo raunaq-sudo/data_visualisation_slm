@@ -567,30 +567,34 @@ async def websocket_endpoint(websocket: WebSocket, chat_id: str):
 # 7. FRONTEND
 # =====================================================================
 
+_HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+def _serve_html(filename: str):
+    path = os.path.join(_HERE, filename)
+    if os.path.exists(path):
+        return FileResponse(path, media_type="text/html")
+    return HTMLResponse(f"<h2 style='font-family:sans-serif;padding:2rem'>{filename} not found.</h2>")
+
+
 @app.get("/")
-async def get_index():
-    here = os.path.dirname(os.path.abspath(__file__))
-    html_path = os.path.join(here, "frontend.html")
-    if os.path.exists(html_path):
-        return FileResponse(html_path, media_type="text/html")
-    return HTMLResponse("<h2 style='font-family:sans-serif;padding:2rem'>frontend.html not found.</h2>")
+async def get_landing():
+    return _serve_html("index.html")
+
+
+@app.get("/builder")
+async def get_builder():
+    return _serve_html("frontend.html")
 
 
 @app.get("/dashboards.html")
 async def get_dashboards_page():
-    here = os.path.dirname(os.path.abspath(__file__))
-    html_path = os.path.join(here, "dashboards.html")
-    if os.path.exists(html_path):
-        return FileResponse(html_path, media_type="text/html")
-    return HTMLResponse("<h2 style='font-family:sans-serif;padding:2rem'>dashboards.html not found.</h2>")
+    return _serve_html("dashboards.html")
+
 
 @app.get("/data_steward.html")
-async def get_dashboards_page():
-    here = os.path.dirname(os.path.abspath(__file__))
-    html_path = os.path.join(here, "data_steward.html")
-    if os.path.exists(html_path):
-        return FileResponse(html_path, media_type="text/html")
-    return HTMLResponse("<h2 style='font-family:sans-serif;padding:2rem'>dashboards.html not found.</h2>")
+async def get_data_steward_page():
+    return _serve_html("data_steward.html")
 
 if __name__ == "__main__":
     import uvicorn
