@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Dashboard Studio — Interactive Demo</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root{
+    --bg:#0b0f14;--canvas-bg:#0d1117;--surface:#161b22;--surface-2:#1c2330;
+    --border:#272e38;--border-hi:#3a4453;--text:#cdd9e5;--text-dim:#768390;
+    --text-muted:#4d5768;--accent:#58a6ff;--accent-dim:#1c3354;--green:#3fb950;
+    --orange:#d29922;--red:#f85149;--sql-text:#79c0ff;
+    --mono:'JetBrains Mono','Fira Code',monospace;
+    --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+    --r:5px;--panel-w:320px;--topbar-h:46px;
+    --c0:#58a6ff;--c1:#3fb950;--c2:#d29922;--c3:#f85149;--c4:#bc8cff;--c5:#39d5ff;
+  }
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:var(--sans);background:var(--canvas-bg);color:var(--text);height:100dvh;display:flex;flex-direction:column;overflow:hidden}
+
+  /* ── Top bar ── */
+  #topbar{height:var(--topbar-h);flex:none;display:flex;align-items:center;gap:12px;padding:0 16px;background:var(--surface);border-bottom:1px solid var(--border);z-index:20}
+  #logo{font-size:14px;font-weight:800;letter-spacing:.02em;color:var(--text);white-space:nowrap}
+  #logo .hl{color:var(--accent)}
+  #topbar .sub{font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .gh-link{margin-left:auto;display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--text-dim);text-decoration:none;border:1px solid var(--border);border-radius:20px;padding:5px 12px;transition:all .15s;background:var(--surface-2)}
+  .gh-link:hover{color:var(--text);border-color:var(--accent)}
+  .reset-btn{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--text-dim);background:var(--surface-2);border:1px solid var(--border);border-radius:20px;padding:5px 12px;cursor:pointer;transition:all .15s;font-family:var(--sans)}
+  .reset-btn:hover{color:var(--red);border-color:var(--red)}
+
+  /* ── Main layout ── */
+  #main{flex:1;display:flex;min-height:0}
+  #chat-panel{width:var(--panel-w);min-width:var(--panel-w);background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;min-height:0}
+  #chat-log{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px;min-height:0}
+  #chat-log::-webkit-scrollbar,#widgets::-webkit-scrollbar{width:4px;height:4px}
+  #chat-log::-webkit-scrollbar-thumb,#widgets::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+  .msg{max-width:88%;padding:8px 11px;border-radius:8px;font-size:12px;line-height:1.5;animation:fade .18s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+  .msg.user{align-self:flex-end;background:var(--accent-dim);border:1px solid #27507e;color:#d9ecff;border-bottom-right-radius:2px}
+  .msg.agent{align-self:flex-start;background:var(--surface-2);border:1px solid var(--border);border-bottom-left-radius:2px}
+  .msg .sql{display:block;font-family:var(--mono);font-size:10px;color:var(--sql-text);background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:6px 8px;margin-top:6px;overflow-x:auto;white-space:pre}
+  .msg .muted{color:var(--text-muted);font-size:10px}
+  .typing{display:flex;gap:4px;padding:4px 2px}
+  .typing span{width:6px;height:6px;border-radius:50%;background:var(--text-muted);animation:bounce 1.2s infinite}
+  .typing span:nth-child(2){animation-delay:.15s}.typing span:nth-child(3){animation-delay:.3s}
+  @keyframes bounce{0%,60%,100%{transform:translateY(0);opacity:.4}30%{transform:translateY(-4px);opacity:1}}
+
+  .chips{display:flex;flex-direction:column;gap:6px;padding:10px 12px;border-top:1px solid var(--border);background:var(--surface-2)}
+  .chips .label{font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text-muted)}
+  .chip{font-size:11px;color:var(--text-dim);background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:5px 10px;cursor:pointer;text-align:left;transition:all .15s;font-family:var(--sans)}
+  .chip:hover{color:var(--text);border-color:var(--accent);background:var(--surface-2)}
+  #chat-input-row{display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--border);background:var(--surface)}
+  #chat-input{flex:1;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--sans);font-size:12px;padding:8px 10px;outline:none;transition:border-color .15s}
+  #chat-input:focus{border-color:var(--accent)}
+  #chat-send{background:var(--accent);border:none;border-radius:6px;color:#04121f;font-size:12px;font-weight:700;padding:0 16px;cursor:pointer;transition:filter .15s}
+  #chat-send:hover{filter:brightness(1.15)}
+  #chat-send:disabled{opacity:.5;cursor:default}
+
+  /* ── Canvas ── */
+  #canvas-wrap{flex:1;display:flex;flex-direction:column;min-width:0;background:
+    radial-gradient(circle at 1px 1px, var(--border-hi) 1px, transparent 0) 0 0/22px 22px,var(--canvas-bg)}
+  #widgets{flex:1;overflow:auto;padding:24px;display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:18px;align-content:start}
+  .widget{position:relative;height:250px;background:var(--surface);border:1px solid var(--border);border-radius:8px;display:flex;flex-direction:column;overflow:hidden;animation:pop .25s ease}
+  @keyframes pop{from{opacity:0;transform:scale(.92)}to{opacity:1;transform:scale(1)}}
+  .widget h4{font-size:11px;font-weight:700;letter-spacing:.06em;color:var(--text-dim);padding:10px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .widget h4 .type{font-size:8px;font-weight:800;color:var(--accent);background:var(--accent-dim);border:1px solid #27507e;padding:2px 7px;border-radius:20px;letter-spacing:.08em;flex:none}
+  .widget .body{flex:1;min-height:0;padding:10px 14px;position:relative}
+  .widget .ql{margin-top:6px;padding:8px 12px;border-top:1px solid var(--border);font-family:var(--mono);font-size:9px;color:var(--sql-text);background:var(--surface-2);flex:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+  .kpi-canvas{display:flex;flex-direction:column;justify-content:center;height:100%}
+  .kpi-canvas .kv{font-family:var(--mono);font-size:38px;font-weight:700;color:var(--accent);line-height:1}
+  .kpi-canvas .kl{font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em;margin-top:6px}
+  .kpi-canvas .ks{font-size:10px;color:var(--green);font-family:var(--mono);margin-top:8px}
+
+  .table-wrap{width:100%;height:100%;overflow:auto;font-family:var(--mono);font-size:10px}
+  .data-table{width:100%;border-collapse:collapse}
+  .data-table th{position:sticky;top:0;background:var(--surface-2);color:var(--text-dim);font-size:9px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;padding:5px 8px;border-bottom:1px solid var(--border);text-align:left;white-space:nowrap}
+  .data-table td{padding:4px 8px;border-bottom:1px solid rgba(39,46,56,.5);white-space:nowrap}
+  .data-table tr:hover td{background:var(--surface-2)}
+
+  .empty{height:100%;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:12px;text-align:center;padding:20px;line-height:1.7}
+  .empty b{color:var(--text-dim)}
+
+  /* ── Inspector / status panel ── */
+  #inspector{width:var(--panel-w);min-width:var(--panel-w);background:var(--surface);border-left:1px solid var(--border);display:flex;flex-direction:column;overflow-y:auto;padding:12px;gap:12px}
+  #inspector::-webkit-scrollbar{width:4px}
+  #inspector::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+  .insp-card{border:1px solid var(--border);border-radius:6px;padding:12px}
+  .insp-title{font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--text-muted);margin-bottom:10px;display:flex;justify-content:space-between;align-items:center}
+  .meter-row{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px}
+  .meter-val{font-family:var(--mono);font-size:22px;font-weight:700}
+  .meter-gate{font-size:10px;font-weight:600}
+  .prog-track{background:var(--surface-2);border-radius:3px;height:6px;overflow:hidden}
+  .prog-fill{height:100%;width:0%;background:var(--accent);transition:width .4s cubic-bezier(.4,0,.2,1),background .3s;border-radius:3px}
+  .step-labels{display:flex;justify-content:space-between;margin-top:4px}
+  .step-labels span{font-family:var(--mono);font-size:8px;color:var(--text-muted)}
+  .slot-key{font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);margin-bottom:2px}
+  .slot-val{font-family:var(--mono);font-size:11px;word-break:break-word}
+  .slot-val.empty{color:var(--text-muted);font-style:italic}
+  .slot-val.filled{color:var(--green)}
+  .slot{padding:7px 0;border-bottom:1px solid var(--border)}
+  .slot:last-child{border-bottom:none}
+  .badge{display:inline-block;font-size:9px;font-weight:700;letter-spacing:.05em;padding:2px 8px;border-radius:20px;text-transform:uppercase}
+  .badge.confirmed{background:#1a3a1f;color:var(--green);border:1px solid #2a5a2f}
+  .badge.pending{background:#2e2008;color:var(--orange);border:1px solid #5a4010}
+  .badge.inactive{background:var(--surface-2);color:var(--text-muted);border:1px solid var(--border)}
+
+  @media (max-width:1024px){
+    #inspector{display:none}
+  }
+  @media (max-width:760px){
+    #chat-panel{position:fixed;top:var(--topbar-h);left:0;bottom:0;z-index:50;width:85vw;max-width:340px;transform:translateX(-100%);transition:transform .25s ease}
+    #chat-panel.open{transform:none;box-shadow:0 0 60px rgba(0,0,0,.6)}
+    #chat-toggle{display:inline-flex!important}
+  }
+  #chat-toggle{display:none;background:var(--surface-2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 10px;font-size:11px;cursor:pointer}
+</style>
+</head>
+<body>
+
+<header id="topbar">
+  <button id="chat-toggle">Chat</button>
+  <span id="logo">Dashboard<span class="hl"> Studio</span></span>
+  <span class="sub">Interactive static demo — runs fully in your browser</span>
+  <a class="gh-link" href="#" target="_blank" rel="noopener">
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+    github.com/your-user/dashboard-studio
+  </a>
+  <button class="reset-btn" id="reset-btn">Reset demo</button>
+</header>
+
+<main id="main">
+  <section id="chat-panel">
+    <div id="chat-log"></div>
+    <div class="chips">
+      <div class="label">Try saying…</div>
+      <button class="chip">I want a KPI card showing total revenue</button>
+      <button class="chip">Bar chart of sales by product category</button>
+      <button class="chip">Trend of daily sales — line chart</button>
+      <button class="chip">Pie chart of units sold by category</button>
+      <button class="chip">Top 10 products as a table</button>
+    </div>
+    <div id="chat-input-row">
+      <input id="chat-input" type="text" placeholder="Describe a widget…" autocomplete="off"/>
+      <button id="chat-send">Send</button>
+    </div>
+  </section>
+
+  <section id="canvas-wrap">
+    <div id="widgets">
+      <div class="empty">Your widgets will appear here.<br/>
+        <div><b>Start a conversation in the chat panel</b> — pick a widget type, a metric, and confirm. Just like the real dashboard agent.</div>
+      </div>
+    </div>
+  </section>
+
+  <aside id="inspector">
+    <div class="insp-card">
+      <div class="insp-title">Session status</div>
+      <div class="meter-row">
+        <span style="font-size:10px;color:var(--text-muted)">completeness</span>
+        <span class="meter-val" id="m-completeness">0.0</span>
+      </div>
+      <div class="meter-row">
+        <span style="font-size:10px;color:var(--text-muted)">gate</span>
+        <span class="meter-gate" id="m-gate" style="color:var(--red)">OFF</span>
+      </div>
+      <div class="prog-track"><div class="prog-fill" id="m-prog"></div></div>
+      <div class="step-labels">
+        <span>greet</span><span>widget</span><span>query</span><span>confirm</span><span>done</span>
+      </div>
+    </div>
+
+    <div class="insp-card" id="m-confirm-card" style="opacity:.5">
+      <div class="insp-title">Confirmation</div>
+      <span class="badge inactive" id="m-confirm">AWAITING</span>
+    </div>
+
+    <div class="insp-card">
+      <div class="insp-title">Intake fields</div>
+      <div class="slot">
+        <div class="slot-key">widget_type</div>
+        <div class="slot-val empty" id="m-widget">—</div>
+      </div>
+      <div class="slot">
+        <div class="slot-key">query_description</div>
+        <div class="slot-val empty" id="m-query">—</div>
+      </div>
+    </div>
+
+    <div class="insp-card">
+      <div class="insp-title">Generated SQL</div>
+      <div class="slot-val empty" id="m-sql" style="font-family:var(--mono);font-size:10px;line-height:1.6">No query generated yet.</div>
+      <div style="margin-top:10px"><span class="badge inactive" id="m-sql-status">—</span></div>
+    </div>
+  </aside>
+</main>
+
+<script>
+/* ─────────────────────────────────────────────────────────────
+   Mock schema (mirrors db_setup/data RetailStoreProductSales)
+   ───────────────────────────────────────────────────────────── */
+const SCHEMA = `
+RetailStoreProductSalesDataset
+  · transaction_id   (INTEGER)
+  · transaction_date (TEXT)
+  · product_id       (INTEGER)
+  · product_name     (TEXT)
+  · product_category (TEXT)
+  · units_sold       (INTEGER)
+  · unit_price       (REAL)
+  · revenue          (REAL)
+  · profit_margin    (REAL)
+`.trim();
+
+const WIDGETS = ["KPI","BARCHART","PIECHART","LINECHART","STACKEDBAR","REPORT"];
+
+/* ─────────────────────────────────────────────────────────────
+   Mock datasets (keyed by intent keywords)
+   ───────────────────────────────────────────────────────────── */
+const DATA = {
+  "revenue per product category": { type:"chart", label:"Revenue per Product Category", sql:`SELECT product_category, ROUND(SUM(revenue),2) AS total_revenue\nFROM retail_store_product_sales_dataset\nGROUP BY product_category\nORDER BY total_revenue DESC;`,
+    labels:["Electronics","Clothing","Groceries","Sports","Beauty"], values:[48210,35120,29840,18750,12460] },
+  "units sold by category": { type:"chart", label:"Units Sold by Category", sql:`SELECT product_category, SUM(units_sold) AS units_sold\nFROM retail_store_product_sales_dataset\nGROUP BY product_category\nORDER BY units_sold DESC;`,
+    labels:["Groceries","Electronics","Clothing","Beauty","Sports"], values:[19140,12480,8540,6120,4430] },
+  "sales over time": { type:"line", label:"Daily Sales Trend", sql:`SELECT transaction_date, SUM(revenue) AS revenue\nFROM retail_store_product_sales_dataset\nGROUP BY transaction_date\nORDER BY transaction_date;`,
+    labels:["Mon","Tue","Wed","Thu","Fri","Sat","Sun"], values:[8200,9430,8800,11200,13400,15800,14900] },
+  "total revenue": { type:"kpi", label:"Total Revenue", value:"$182,420", sub:"+12.4% vs last week", sql:`SELECT ROUND(SUM(revenue),2) AS total_revenue\nFROM retail_store_product_sales_dataset;` },
+  "avg units per transaction": { type:"kpi", label:"Avg Units / Transaction", value:"2.4", sub:"benchmark: 2.1", sql:`SELECT ROUND(AVG(units_sold),2) AS avg_units\nFROM retail_store_product_sales_dataset;` },
+  "top products": { type:"report", label:"Top 10 Products", rows:[
+    ["NovaPhone X","Electronics",842,"$86,120"],["AirBuds Pro","Electronics",931,"$52,410"],
+    ["RapidCharge Cable","Electronics",1210,"$27,830"],["Orbit Sneakers","Sports",654,"$24,180"],
+    ["PureRice 10kg","Groceries",1834,"$20,170"],["Therapist Hoodie","Clothing",405,"$16,200"],
+    ["Hydra Drink Mix","Groceries",2110,"$14,770"],["Velvet Scarf","Clothing",512,"$14,340"],
+    ["GymShaker 1L","Sports",988,"$13,830"],["Glow Serum","Beauty",346,"$12,110"] ],
+    sql:`SELECT product_name, product_category, units_sold, ROUND(revenue,2)
+FROM retail_store_product_sales_dataset
+ORDER BY revenue DESC
+LIMIT 10;` },
+};
+
+const INTENTS = ["revenue per product category","units sold by category","sales over time","total revenue","avg units per transaction","top products"];
+
+function findIntent(text){
+  const t = text.toLowerCase();
+  if(/top\s*(10|ten)|as a table|table of|report|listing|top products/i.test(t)) return "top products";
+  if(/revenue.*(category|by)/i.test(t) || /category.*revenue/i.test(t) || /sales.*category/i.test(t)) return "revenue per product category";
+  if(/units?\s*(sold)?\s*by\s*categor/i.test(t)) return "units sold by category";
+  if(/time|trend|over\s*time|daily|weekly|monthly|line/i.test(t)) return "sales over time";
+  if(/(total\s*)?revenue/i.test(t) && !/category|by/i.test(t)) return "total revenue";
+  if(/avg|average/i.test(t)) return "avg units per transaction";
+  return null;
+}
+/* Default widget type when the user didn't name one explicitly. */
+function inferWidget(intent){
+  if (intent === "top products") return "REPORT";
+  if (intent === "sales over time") return "LINECHART";
+  if (intent === "avg units per transaction" || intent === "total revenue") return "KPI";
+  return "BARCHART";
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Scripted intake engine (mirrors IntakeOutput completeness)
+   ───────────────────────────────────────────────────────────── */
+const state = { widget_type:null, query_description:null, is_confirmed:false };
+const completedWidgets = [];
+let charts = {};
+let busy = false;
+
+const AFFIRMATIVES = ["yes","y","yep","yeah","yup","ok","okay","sure","confirm","confirmed","correct","go ahead","proceed","looks good","do it","go for it","absolutely"];
+
+function resetState(){
+  state.widget_type=null; state.query_description=null; state.is_confirmed=false;
+  setMeter(0.0); refreshInspector();
+}
+
+function widgetFromText(t){
+  const u = t.toUpperCase().replace(/\s+/g, '');
+  if (/\bTABLE\b/.test(t.toUpperCase())) return "REPORT";
+  return WIDGETS.find(w => u.includes(w));
+}
+
+function completeness(){
+  let c=0; let confirmedGate=false;
+  const w = state.widget_type, q = state.query_description;
+  if (w && q && state.is_confirmed){ c=1.0; confirmedGate=true; setMeter(1.0); }
+  else if (w && q && !state.is_confirmed){ c=0.7; setMeter(0.7); }
+  else if (w || q){ c=0.5; setMeter(0.5); }
+  else { c=0.0; setMeter(0.0); }
+  setGate(confirmedGate);
+  return c;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Chat engine
+   ───────────────────────────────────────────────────────────── */
+function addMsg(role, text, extras){
+  const log = document.getElementById("chat-log");
+  const el = document.createElement("div");
+  el.className = "msg " + role;
+  const span = document.createElement("span");
+  span.textContent = text;
+  el.appendChild(span);
+  if (extras && extras.sql){
+    const sql = document.createElement("code");
+    sql.className = "sql";
+    sql.textContent = extras.sql;
+    el.appendChild(sql);
+  }
+  if (extras && extras.muted){
+    const m = document.createElement("div");
+    m.className = "muted";
+    m.textContent = extras.muted;
+    el.appendChild(m);
+  }
+  log.appendChild(el);
+  log.scrollTop = log.scrollHeight;
+}
+function typingIndicator(done){
+  const log = document.getElementById("chat-log");
+  const el = document.createElement("div");
+  el.className = "msg agent";
+  el.innerHTML = '<div class="typing"><span></span><span></span><span></span></div>';
+  log.appendChild(el);
+  log.scrollTop = log.scrollHeight;
+  setTimeout(()=>{ el.remove(); done(); }, 650);
+}
+
+function proposePlan(){
+  const intent = state.query_description;
+  addMsg("agent", `Here's the plan: a ${state.widget_type} showing ${intent}. Shall I proceed?`,
+    { muted:"(say yes / confirm to generate)" });
+  setMeter(0.7); refreshInspector();
+}
+
+function agentTurn(userText){
+  const t = userText.toLowerCase().replace(/[.!?]+$/,"").trim();
+
+  /* Off-topic */
+  if (/weather|recipe|movie|music|game/i.test(t)){
+    addMsg("agent", "I can only help you build a dashboard widget. Which type do you want — KPI, BARCHART, PIECHART, LINECHART, STACKEDBAR, or REPORT?"); 
+    setMeter(0.0); refreshInspector(); return;
+  }
+
+  /* Data inventory questions */
+  if (/what data|data do i have|what (metrics|columns|tables)|what can i/i.test(t)){
+    addMsg("agent", "Here is the data available in your connected database:\n\n" + SCHEMA,
+      { muted:"What would you like to visualise?" });
+    setMeter(0.3); refreshInspector(); return;
+  }
+
+  /* Confirmation */
+  if (AFFIRMATIVES.some(a => t === a || t.startsWith(a + " ")) &&
+      state.widget_type && state.query_description && !state.is_confirmed){
+    state.is_confirmed = true;
+    buildWidget();
+    return;
+  }
+
+  /* Parse the turn: explicit widget type (+ inferred default) + intent */
+  const explicit = widgetFromText(t);
+  const intent = findIntent(t);
+
+  /* Change of request while a plan is pending → adopt it and re-propose */
+  if (intent && state.widget_type && state.query_description && !state.is_confirmed){
+    state.query_description = intent;
+    proposePlan();
+    return;
+  }
+
+  let widget = state.widget_type || explicit || (intent ? inferWidget(intent) : null);
+  if (widget && explicit) widget = explicit;
+
+  if (widget && intent){
+    /* Full request in one message (or the missing piece just arrived) */
+    state.widget_type = widget; state.query_description = intent;
+    if (!state.is_confirmed){ proposePlan(); }
+    return;
+  }
+
+  if (widget && !state.query_description){
+    state.widget_type = widget;
+    addMsg("agent", `Got it — a ${widget} widget. Based on your available data, here are columns you could track: product_category, revenue, units_sold, profit_margin, transaction_date. Which metric should we display?`,
+      { muted:"e.g. ‘revenue per product category’ or ‘units sold by category’" });
+    setMeter(0.5); refreshInspector(); return;
+  }
+
+  if (intent && !widget){
+    state.query_description = intent;
+    addMsg("agent", `What type of widget should show ${intent}? KPI, BARCHART, PIECHART, LINECHART, STACKEDBAR, or REPORT (table)?`,
+      { muted:"you can also just type the widget type" });
+    setMeter(0.5); refreshInspector(); return;
+  }
+
+  if (state.widget_type && state.query_description){
+    proposePlan();
+    return;
+  }
+
+  addMsg("agent", "Which type of widget would you like? KPI, BARCHART, PIECHART, LINECHART, STACKEDBAR, or REPORT (table)?", null);
+  setMeter(0.3); refreshInspector();
+}
+
+function buildWidget(){
+  const type = state.widget_type, q = state.query_description;
+  const data = DATA[q] || DATA["revenue per product category"];
+
+  /* Simulated SQL agent producing a JSON result */
+  addMsg("agent", "Perfect! Generating your dashboard widget now.", {
+    sql: data.sql,
+    muted: `confidence 0.98 · SQL agent (qwen2.5:7b)`,
+  });
+
+  setTimeout(()=>{
+    if (!completedWidgets.some(w => w.type===type && w.query===q)){
+      completedWidgets.push({ type, query:q, data });
+      renderWidget(type, q, data);
+      addMsg("agent", `Placed your ${type} widget on the canvas. Drag to reposition — or keep building more.`,
+        { muted:"canvas position is mocked in this static demo" });
+    } else {
+      addMsg("agent", `You already have a ${type} for that query on the canvas.`);
+    }
+    if (window.innerWidth <= 760) document.getElementById("chat-panel").classList.remove("open");
+  }, 700);
+  resetState();
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Canvas rendering
+   ───────────────────────────────────────────────────────────── */
+function renderWidget(type, query, data){
+  const grid = document.getElementById("widgets");
+  grid.querySelector(".empty")?.remove();
+
+  const card = document.createElement("div");
+  card.className = "widget";
+  const h4 = document.createElement("h4");
+  h4.innerHTML = `<span>${data.label}</span><span class="type">${type}</span>`;
+  const body = document.createElement("div");
+  body.className = "body";
+  const sql = document.createElement("div");
+  sql.className = "ql";
+  sql.textContent = data.sql.split("\n")[0] + " …";
+
+  const canvas = document.createElement("canvas");
+  const ctx = body.appendChild(canvas);
+  card.appendChild(h4); card.appendChild(body); card.appendChild(sql);
+  grid.appendChild(card);
+
+  Chart.defaults.color = "#768390";
+  Chart.defaults.font.family = "'JetBrains Mono', monospace";
+  const pal = ["#58a6ff","#3fb950","#d29922","#f85149","#bc8cff","#39d5ff"];
+
+  if (type === "KPI"){
+    body.innerHTML = `
+      <div class="kpi-canvas">
+        <div class="kv">${data.value}</div>
+        <div class="kl">${data.label}</div>
+        <div class="ks">${data.sub}</div>
+      </div>`;
+  } else if (type === "REPORT"){
+    let html = '<div class="table-wrap"><table class="data-table"><thead><tr><th>product</th><th>category</th><th>units</th><th>revenue</th></tr></thead><tbody>';
+    data.rows.forEach(r => { html += `<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td></tr>`; });
+    body.innerHTML = html + '</tbody></table></div>';
+  } else {
+    const cfg = {
+      type: type === "LINECHART" ? "line" : "bar",
+      data: { labels: data.labels, datasets: [{
+        label:data.label, data:data.values,
+        backgroundColor: pal.slice(0, data.labels.length),
+        borderColor:pal[0], borderWidth:2, tension:.35, fill:false,
+        borderRadius:3,
+      }]},
+      options:{
+        responsive:true, maintainAspectRatio:false,
+        plugins:{ legend:{ display:type==="BARCHART" ? false : false },
+          tooltip:{ enabled:true } },
+        scales:{
+          x:{ grid:{ color:"rgba(39,46,56,.4)" } },
+          y:{ grid:{ color:"rgba(39,46,56,.4)" }, beginAtZero:true },
+        },
+      },
+    };
+    if (type === "PIECHART"){
+      cfg.type = "pie";
+      delete cfg.options.scales;
+    }
+    if (type === "STACKEDBAR"){
+      cfg.type = "bar";
+      cfg.options.scales = { x:{ stacked:true, grid:{ color:"rgba(39,46,56,.4)" } }, y:{ stacked:true, grid:{ color:"rgba(39,46,56,.4)" }, beginAtZero:true } };
+    }
+    const id = "c_" + Date.now(); canvas.id = id;
+    charts[id] = new Chart(ctx, cfg);
+  }
+
+  card.addEventListener("dblclick", ()=> card.remove());
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Inspector / meter
+   ───────────────────────────────────────────────────────────── */
+function setMeter(v){
+  document.getElementById("m-completeness").textContent = v.toFixed(1);
+  document.getElementById("m-prog").style.width = (v*100)+"%";
+  document.getElementById("m-prog").style.background = v>=1 ? "var(--green)" : v>0.5 ? "var(--orange)" : "var(--accent)";
+  document.getElementById("m-gate").textContent = state.is_confirmed ? "CONFIRMED" : (v>=0.7 ? "GATE OK" : "OFF");
+  document.getElementById("m-gate").style.color = state.is_confirmed ? "var(--green)" : v>=0.7 ? "var(--orange)" : "var(--red)";
+}
+function setGate(c){
+  const b = document.getElementById("m-confirm");
+  const card = document.getElementById("m-confirm-card");
+  b.textContent = c ? "CONFIRMED" : "AWAITING";
+  b.className = "badge " + (c ? "confirmed" : "inactive");
+  card.style.opacity = c ? 1 : .5;
+}
+function refreshInspector(){
+  const w = document.getElementById("m-widget"), q = document.getElementById("m-query"), s = document.getElementById("m-sql"), ss = document.getElementById("m-sql-status");
+  w.textContent = state.widget_type || "—";
+  w.className = "slot-val " + (state.widget_type ? "filled" : "empty");
+  q.textContent = state.query_description || "—";
+  q.className = "slot-val " + (state.query_description ? "filled" : "empty");
+  if (state.widget_type && state.query_description){
+    const d = DATA[state.query_description];
+    s.textContent = d ? d.sql : "No query yet.";
+    ss.textContent = d ? "PENDING · ready to confirm" : "—";
+    ss.className = "badge pending";
+    setGate(false);
+  } else {
+    s.textContent = "No query generated yet.";
+    ss.textContent = "—";
+    ss.className = "badge inactive";
+  }
+  completeness();
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Entry / wiring
+   ───────────────────────────────────────────────────────────── */
+function send(){
+  const input = document.getElementById("chat-input");
+  const text = input.value.trim();
+  if (!text || busy) return;
+  busy = true;
+  input.value = "";
+  addMsg("user", text);
+  typingIndicator(()=>{
+    agentTurn(text);
+    busy = false;
+  });
+}
+
+document.getElementById("chat-send").addEventListener("click", send);
+document.getElementById("chat-input").addEventListener("keydown", e => { if (e.key === "Enter") send(); });
+document.querySelectorAll(".chip").forEach(ch => ch.addEventListener("click", ()=>{
+  document.getElementById("chat-input").value = ch.textContent;
+  send();
+}));
+document.getElementById("chat-toggle").addEventListener("click", ()=>{
+  document.getElementById("chat-panel").classList.toggle("open");
+});
+document.getElementById("reset-btn").addEventListener("click", ()=>{
+  Object.values(charts).forEach(ch => ch.destroy());
+  charts = {};
+  document.getElementById("widgets").innerHTML =
+    '<div class="empty">Your widgets will appear here.<br/><div><b>Start a conversation in the chat panel</b></div></div>';
+  document.getElementById("chat-log").innerHTML = "";
+  resetState();
+  addMsg("agent", "Demo reset. Which type of widget would you like — KPI, BARCHART, PIECHART, LINECHART, STACKEDBAR, or REPORT (table)?");
+  setMeter(0.0);
+});
+document.getElementById("m-confirm-card").addEventListener("dblclick", ()=>{
+  if (!state.widget_type || !state.query_description) return;
+  addMsg("user", "yes");
+  setTimeout(()=> buildWidget(), 600);
+});
+
+/* Boot */
+const boot = `
+Hello! Let's configure a dashboard widget.
+What kind of layout are we building? (e.g., KPI, BARCHART, PIECHART, LINECHART, STACKEDBAR)
+`.trim();
+addMsg("agent", boot, { muted:"static demo · no backend · try a suggested chip" });
+setMeter(0.0);
+</script>
+</body>
+</html>
